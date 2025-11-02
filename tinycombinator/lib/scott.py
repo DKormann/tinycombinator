@@ -3,13 +3,11 @@ Scott encoding for natural numbers and functions on them
 """
 
 from operator import truediv
-from tinycombinator.terms import F, T, cnat
-from tinycombinator.main import load_term_c, run, run_term_c, unload_term_c
-from tinycombinator.helpers import DEBUG
-from tinycombinator.node import  IC, Tag, app, hide_dups, lam, lamvar, move, null, parse_lam, print_tree, sup, x, dup
+from tinycombinator.lib.terms import F, T, cnat
+from tinycombinator.main import execute
 
+from tinycombinator.ast import  IC, Tag, app, hide_dups, lam, lamvar, move, null, parse_lam, print_tree, sup, x, dup
 
-import time
 
 
 def nat(n:int)->IC:

@@ -1,10 +1,9 @@
 
 
-from tinycombinator.node import IC, lam, x, app, sup, dup, var, null, Tag, tree, move
+from tinycombinator.ast import IC, lam, x, app, sup, dup, var, null, Tag, tree, move
 from tinycombinator.helpers import DEBUG
 
 
-#%%
 def fun(bod:IC)->IC:
   v = IC(Tag.Var)
   res = IC(Tag.Lam, bod, v)
@@ -88,7 +87,7 @@ def step(term:IC)->bool:
 
 
 def reduce(term):
-  while step(term):
-    pass
+  while step(term): pass
+  return  term
 
 

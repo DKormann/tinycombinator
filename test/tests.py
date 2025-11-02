@@ -1,11 +1,11 @@
 from math import exp
 import unittest
 
-from tinycombinator.terms import circular, cnat
+from tinycombinator.lib.terms import circular, cnat
 
-from tinycombinator import scott
+from tinycombinator.lib import scott
 from tinycombinator.main import get_lib, get_node_count_c, load_term_c, run_term_c
-from tinycombinator.node import IC, reset_labels
+from tinycombinator.ast import IC, reset_labels
 from tinycombinator.helpers import DEBUG, hide_dups, print_tree
 
 

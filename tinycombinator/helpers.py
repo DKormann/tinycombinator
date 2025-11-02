@@ -2,8 +2,12 @@ from contextlib import contextmanager
 import os
 
 
+envs = {}
+
+
 class Env:
-  def __init__(self, name:str, value:int):
+  def __init__(self, name:str, value:int | str):
+    envs[name] = self
     self.name = name
     self.value = value
     if name in os.environ: self.value = int(os.environ[name])
@@ -27,7 +31,17 @@ class Env:
 
 
 hide_dups = Env("hide_dups", False)
-print_tree = Env("tree", True)
+print_tree = Env("print_tree", True)
 DEBUG = Env("DEBUG", 0)
 TIMEIT = Env("TIMEIT", False)
 BACKEND = Env("BACKEND", "c")
+
+@contextmanager
+def Context(**kwargs):
+  old_envs = {name: envs[name].value for name in envs}
+  for name, value in kwargs.items():
+    envs[name].set(value)
+  try: yield
+  finally:
+    for name, value in old_envs.items():
+      envs[name].set(value)

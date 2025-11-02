@@ -1,10 +1,11 @@
 
 import subprocess, ctypes, os, hashlib, threading
 import time
+import sys
 from typing import Callable
 
 from tinycombinator.run import reduce
-from tinycombinator.node import IC, Tag
+from tinycombinator.ast import IC, Tag
 from tinycombinator.helpers import BACKEND, DEBUG, TIMEIT, hide_dups, print_tree
 
 
@@ -110,6 +111,8 @@ def get_lib():
     go("set_debug", [ctypes.c_int], None)
     go("run", [ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
     _local.lib.set_debug(DEBUG.get())
+  
+  _local.lib.set_debug(DEBUG.get())
 
   return _local.lib
 
@@ -136,6 +139,7 @@ def run_term_c(term:IC, maxsteps: int = DEFAULT_FUEL, runs = DEFAULT_FUEL) -> IC
     steps = run(runtime, int(maxsteps))
     t += time.time_ns() - st
     term = unload_term_c(runtime)
+    sys.stdout.flush()  # Flush for Jupyter notebook compatibility
     if DEBUG: print(term)
     if steps < maxsteps: break
   if TIMEIT:
@@ -149,4 +153,7 @@ def run_term_c(term:IC, maxsteps: int = DEFAULT_FUEL, runs = DEFAULT_FUEL) -> IC
 
 def execute(node:IC, *args, **kwargs)->Callable[[IC, int, int], IC]:
   if BACKEND == "c": return run_term_c(node, *args, **kwargs)
-  return reduce(node)
+  if BACKEND == "py":
+
+    return reduce(node.copy())
+  raise ValueError(f"Invalid backend: {BACKEND}")

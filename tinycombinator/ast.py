@@ -1,6 +1,7 @@
 
 from enum import Enum, auto
 from typing import Callable
+
 from .helpers import hide_dups, print_tree
 
 
@@ -75,7 +76,16 @@ class IC:
   def __call__(self, *args:"IC")->"IC":
     if not args: return self
     return app(self, args[0])(*args[1:])
+  
 
+  def copy(self)->"IC":
+    from tinycombinator.main import from_c_data, to_c_data
+    return from_c_data(to_c_data(self))
+  
+  def run(self)->"IC":
+    from tinycombinator.main import execute
+    return execute(self)
+  
 
 
 def mk_curried(arg:Callable)->Callable:

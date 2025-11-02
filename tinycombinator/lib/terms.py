@@ -1,7 +1,7 @@
 
 from typing import Callable
-from .node import IC, Tag, app, lam, move, null, parse_lam, sup, x, dup
-from .helpers import hide_dups
+from tinycombinator.ast import IC, Tag, app, lam, move, null, parse_lam, sup, x, dup
+from tinycombinator.helpers import hide_dups
 
 
 def id(): return lam(x(0))
