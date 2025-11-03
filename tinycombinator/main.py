@@ -139,7 +139,7 @@ def run_term_c(term:IC, maxsteps: int = DEFAULT_FUEL, runs = DEFAULT_FUEL) -> IC
     steps = run(runtime, int(maxsteps))
     t += time.time_ns() - st
     term = unload_term_c(runtime)
-    sys.stdout.flush()  # Flush for Jupyter notebook compatibility
+    sys.stdout.flush()
     if DEBUG: print(term)
     if steps < maxsteps: break
   if TIMEIT:

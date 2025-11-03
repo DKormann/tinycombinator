@@ -2,7 +2,8 @@
 from enum import Enum, auto
 from typing import Callable
 
-from .helpers import hide_dups, print_tree
+from tinycombinator.helpers import hide_dups, print_tree
+
 
 
 
@@ -16,6 +17,8 @@ class Tag(Enum):
   Var = auto()
   Freed = auto()
   Prim = auto()
+  # Mat = auto()
+  # Dat = auto()
 
   intermediate_var = auto()
 
@@ -29,7 +32,6 @@ class IC:
     self.s0 = None if s0 is None else IC.into(s0)
     self.s1 = None if s1 is None else IC.into(s1)
     self.label = label
-
     if isinstance(tag, Tag): self.tag = tag
     else: move(IC.into(tag),self)
   def __str__(self)->str: return tree(self, {})
@@ -47,6 +49,8 @@ class IC:
 
   @staticmethod
   def into(arg)->"IC":
+    if hasattr(arg, "ic"): return arg.ic()
+
     if isinstance(arg, IC): return arg
     if callable(arg):
 
@@ -95,10 +99,6 @@ def mk_curried(arg:Callable)->Callable:
     if len(args) == arg.__code__.co_argcount: return arg(*args)
     return curried
   return curried
-
-
-
-
 
 
 
@@ -180,8 +180,6 @@ def parse_lam(lam:IC, current:IC, depth:int):
     else:
       prev = lam.s1
       move(dup(var(lam)), [prev,current])
-
-
 
 def tree(term:IC, ctx:dict[IC, int])->str:
   ws = "  " if print_tree else ""
