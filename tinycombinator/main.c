@@ -234,7 +234,7 @@ void erase(Node* node, Runtime* runtime){
   free_node(node, runtime);
 }
 
-int APP_LAM(Node* App, Node* Lam, Runtime* runtime){
+void APP_LAM(Node* App, Node* Lam, Runtime* runtime){
 
   Node* arg = App->s1;
   Node* var = Lam->s1;
@@ -250,10 +250,9 @@ int APP_LAM(Node* App, Node* Lam, Runtime* runtime){
   }
 
   free_node(Lam, runtime);
-  return 1;
 }
 
-int APP_SUP(Node* App, Node* Sup, Runtime* runtime){
+void APP_SUP(Node* App, Node* Sup, Runtime* runtime){
 
   Node** dups = malloc(sizeof(Node*) * 2);
 
@@ -263,10 +262,9 @@ int APP_SUP(Node* App, Node* Sup, Runtime* runtime){
   
   move(sup(new_node(Tag_App, 0, Sup->s0, dups[0], runtime), new_node(Tag_App, 0, Sup->s1, dups[1], runtime), Sup->label, runtime), App, runtime);
   free(dups);
-  return 1;
 }
 
-int APP_PRIM(Node* App, Node* Pri, Runtime* runtime){
+void APP_PRIM(Node* App, Node* Pri, Runtime* runtime){
   Prim* P = (Prim*) Pri->s0;
   
   P->args[P->arg_count++] = App->s1;
@@ -275,24 +273,21 @@ int APP_PRIM(Node* App, Node* Pri, Runtime* runtime){
     Node* res = f(P->args, runtime);
     move(res, App, runtime);
     for (int i = 0; i < P->arg_count; i++) free_node(P->args[i], runtime);
-    return 1;
   }
 
   move(Pri, App, runtime);
   free_node(Pri, runtime);
-  return 1;
 }
 
 
-int APP_NULL(Node* App, Node* Null, Runtime* runtime){
+void APP_NULL(Node* App, Node* Null, Runtime* runtime){
   erase(App->s1, runtime);
   move(Null, App, runtime);
-  return 1;
 }
 
 
 
-int DUP_LAM(Node* dup, Node* Lam, Runtime* runtime){
+void DUP_LAM(Node* dup, Node* Lam, Runtime* runtime){
   Node* da = dup->tag == Tag_Dup ? dup : dup->s1;
   Node* db = dup->tag == Tag_Dup2 ? dup : dup->s1;
 
@@ -307,17 +302,18 @@ int DUP_LAM(Node* dup, Node* Lam, Runtime* runtime){
   Node* funb = NULL;
 
   if (da != NULL){
-    funa = new_node(Tag_Lam,0, NULL, NULL, runtime);
-    vara = new_node(Tag_Var, 0, NULL, NULL, runtime);
+    
+    funa = empty_node(Tag_Lam, 0, runtime);
+    vara = empty_node(Tag_Var, 0, runtime);
     funa->s0 = dbody[0];
-    vara->s0 = funa;
     funa->s1 = vara;
+    vara->s0 = funa;
     move(funa, da, runtime);
   }
 
   if (db != NULL){
-    funb = new_node(Tag_Lam,0, NULL, NULL, runtime);
-    varb = new_node(Tag_Var, 0, NULL, NULL, runtime);
+    funb = empty_node(Tag_Lam,0, runtime);
+    varb = empty_node(Tag_Var, 0, runtime);
     funb->s0 = dbody[1];
     varb->s0 = funb;
     funb->s1 = varb;
@@ -327,10 +323,9 @@ int DUP_LAM(Node* dup, Node* Lam, Runtime* runtime){
   if (Lam->s1 != NULL){
     move(sup(vara, varb, label, runtime), Lam->s1, runtime);
   }
-  return 1;
 }
 
-int DUP_SUP(Node* dup, Node* Sup, Runtime* runtime){
+void DUP_SUP(Node* dup, Node* Sup, Runtime* runtime){
 
   Node* da = dup->tag == Tag_Dup ? dup : dup->s1;
   Node* db = dup->tag == Tag_Dup2 ? dup : dup->s1;
@@ -353,7 +348,6 @@ int DUP_SUP(Node* dup, Node* Sup, Runtime* runtime){
   }
 
   free_node(Sup, runtime);
-  return 1;
 }
 
 
@@ -371,13 +365,14 @@ int handle_redex(Node* term, Node* other, Runtime* runtime){
 
   if (fuel <= runtime->steps) return 0;
 
-  int (*handler)(Node*, Node*, Runtime*) = NULL;
+  void (*handler)(Node*, Node*, Runtime*) = NULL;
   if (term->tag == Tag_App) handler = other->tag == Tag_Lam ? APP_LAM : other->tag == Tag_Sup ? APP_SUP : other->tag == Tag_Null ? APP_NULL : NULL;
   else if (term->tag == Tag_Dup || term->tag == Tag_Dup2) handler = other->tag == Tag_Lam ? DUP_LAM : other->tag == Tag_Sup ? DUP_SUP : other->tag == Tag_Null ? DUP_NULL : NULL;
   if (handler != NULL){
     runtime->steps ++;
     if (DEBUG) printf(BLUE "%d: HANDLE %s -> %s\n" RESET, runtime->steps, node_format(term), node_format(other));
-    return handler(term, other, runtime);
+    handler(term, other, runtime);
+    return 1;
   }
   return 0;
 }
@@ -461,10 +456,5 @@ int run(int Nsteps, Runtime* runtime){
   return runtime->steps;
 }
 
-int get_node_count(Runtime* runtime){
-  return runtime->node_ctr;
-}
-
-Runtime* new_runtime(){
-  return calloc(1, sizeof(Runtime));
-}
+int get_node_count(Runtime* runtime){ return runtime->node_ctr; }
+Runtime* new_runtime(){return calloc(1, sizeof(Runtime)); }

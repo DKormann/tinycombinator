@@ -89,11 +89,8 @@ def unload_term_c(runtime)->IC:
     return nodes[node]
   
   visit(root)
-  
   for node in nodes:
-    ic = nodes[node]
-    if node is not None and ic.tag == Tag.Var and node not in taken:
-      ic.s0.s1 = None
+    if node is not None and (ic := nodes[node]).tag == Tag.Var and node not in taken: ic.s0.s1 = None
   return nodes[root]
 
 
