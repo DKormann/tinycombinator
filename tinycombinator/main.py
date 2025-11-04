@@ -2,17 +2,15 @@
 import subprocess, ctypes, os, hashlib, threading
 import time
 import sys
-from typing import Callable
+from typing import Callable, Dict
 
 from tinycombinator.run import reduce
 from tinycombinator.ast import IC, Tag
-from tinycombinator.helpers import BACKEND, DEBUG, TIMEIT, hide_dups, print_tree
-
-
+from tinycombinator.helpers import BACKEND, DEBUG, TIMEIT, hide_dups
 
 def to_c_data(node: IC) -> list[int]:
   """Serialize a IC graph to a flat int array for passing to C"""
-  ctx = {}
+  ctx : Dict[IC, int] = {}
   nodes = []
   taken = {}
 
@@ -49,8 +47,6 @@ def to_c_data(node: IC) -> list[int]:
 def from_c_data(res:ctypes.POINTER(ctypes.c_int))->IC:
 
 
-  tags = [Tag.App, Tag.Lam, Tag.Sup, Tag.Dup, Tag.Dup2, Tag.Null, Tag.Var, Tag.Freed]
-
   l = res[0]
   if l == -1: raise RuntimeError("Segmentation fault occurred in C code")
   
@@ -58,7 +54,7 @@ def from_c_data(res:ctypes.POINTER(ctypes.c_int))->IC:
 
   for i in range(l):
     if DEBUG>1: print(res[i * 4 + 1])
-    nodes[i + 1].tag = tags[res[i * 4 + 1]]
+    nodes[i + 1].tag = list(Tag.__members__.values())[res[i * 4 + 1]]
     nodes[i + 1].label = res[i * 4 + 2]
     nodes[i + 1].s0 = nodes[res[i * 4 + 3]]
     nodes[i + 1].s1 = nodes[res[i * 4 + 4]]
@@ -69,7 +65,6 @@ def from_c_data(res:ctypes.POINTER(ctypes.c_int))->IC:
     if node.tag == Tag.Lam and refcount(node.s1) < 2: node.s1 = None
 
   return nodes[1]
-
 
 tmp_path = os.path.join( os.path.dirname(__file__), "../.tmp")
 

@@ -35,7 +35,7 @@ void error(char* content){
   exit(1);
 }
 
-typedef enum Tag{ Tag_App, Tag_Lam, Tag_Sup, Tag_Dup, Tag_Dup2, Tag_Null, Tag_Var, Tag_Freed }Tag;
+typedef enum Tag{ Tag_App, Tag_Lam, Tag_Sup, Tag_Dup, Tag_Dup2, Tag_Null, Tag_Var, Tag_Prim, Tag_Freed }Tag;
 
 typedef struct Node{ Tag tag; int label; struct Node* s0; struct Node* s1; }Node;
 
@@ -50,9 +50,7 @@ typedef struct Runtime{
 } Runtime;
 
 
-char* tag_names[8] = { "App", "Lam", "Sup", "Dup", "Dup2", "Null", "Var", "Freed" };
-
-
+char* tag_names[9] = { "App", "Lam", "Sup", "Dup", "Dup2", "Null", "Var", "Prim", "Freed" };
 
 
 char * node_format(Node* node){
@@ -86,6 +84,49 @@ Node* new_node(Tag tag, int label, Node* s0, Node* s1, Runtime* runtime){
 
 
 
+
+typedef struct Prim{
+  void* value;
+  int arity;
+  int arg_count;
+  struct Node** args;
+  int ref_count;
+}Prim;
+
+Prim* take_prim(Prim* prim){
+  prim->ref_count ++;
+  return prim;
+}
+
+void release_prim(Prim* prim){
+  prim->ref_count --;
+  if (prim->ref_count <= 0){
+    free(prim->value);
+    free(prim);
+  }
+}
+
+Node* prim_add(Node** args, Runtime* runtime){
+  Node* a = args[0];
+  Node* b = args[1];
+  int * A = (int*) a->s0;
+  int * B = (int*) b->s0;
+  int * res = malloc(sizeof(int));
+  *res = *A + *B;
+  return new_node(Tag_Prim, 0, (Node*) res, NULL, runtime);
+}
+
+
+
+Node* new_prim(void* value, int arity){
+  Prim* prim = calloc(1, sizeof(Prim));
+  prim->value = value;
+  prim->arity = arity;
+  prim->args = calloc(arity, sizeof(Node*));
+  return new_node(Tag_Prim, 0, (Node*) prim, NULL, NULL);
+}
+
+
 void free_node(Node* node, Runtime* runtime){
   if (DEBUG && node->tag == Tag_Freed){
     printf("Error: Node %p is already freed\n", node);
@@ -95,6 +136,7 @@ void free_node(Node* node, Runtime* runtime){
     printf("free node %p ", node);
     printf("tag: %s ", node_format(node));
   }
+  if (node->tag == Tag_Prim) release_prim((Prim*) node->s0);
   node->tag = Tag_Freed;
   runtime->node_ctr --;
   node->s0 = runtime->free_list;
@@ -234,8 +276,10 @@ void erase(Node* node, Runtime* runtime){
       else node->s1->s1 = NULL;
       break;
     }
+    case Tag_Prim:
     case Tag_Null: break;
     case Tag_Freed: error("Node is freed");
+
   };
   free_node(node, runtime);
 }
@@ -271,6 +315,23 @@ int APP_SUP(Node* App, Node* Sup, Runtime* runtime){
   
   move(sup(new_node(Tag_App, 0, Sup->s0, dups[0], runtime), new_node(Tag_App, 0, Sup->s1, dups[1], runtime), Sup->label, runtime), App, runtime);
   free(dups);
+  return 1;
+}
+
+int APP_PRIM(Node* App, Node* Pri, Runtime* runtime){
+  Prim* P = (Prim*) Pri->s0;
+  
+  P->args[P->arg_count++] = App->s1;
+  if (P->arg_count == P->arity){
+    Node* (*f)(Node**, Runtime*) = P->value;
+    Node* res = f(P->args, runtime);
+    move(res, App, runtime);
+    for (int i = 0; i < P->arg_count; i++) free_node(P->args[i], runtime);
+    return 1;
+  }
+
+  move(Pri, App, runtime);
+  free_node(Pri, runtime);
   return 1;
 }
 
@@ -443,7 +504,7 @@ int search_redex(Node* term, Runtime* runtime){
       }
       return 0;
     
-    case Tag_Var: case Tag_Null: return 0;
+    case Tag_Var: case Tag_Null: case Tag_Prim: return 0;
     case Tag_Freed: error("Node is freed"); exit(1);
   }
 }
