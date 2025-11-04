@@ -7,6 +7,11 @@
 #include <setjmp.h>
 
 
+#define RED     "\x1b[31m"
+#define GREEN   "\x1b[32m"
+#define YELLOW  "\x1b[33m"
+#define BLUE    "\x1b[34m"
+#define RESET   "\x1b[0m"
 
 static jmp_buf segfault_jmp;
 static volatile sig_atomic_t segfault_occurred = 0;
@@ -19,11 +24,6 @@ void segfault_handler(int sig) {
 int DEBUG = 1;
 void set_debug(int debug){ DEBUG = debug; }
 
-#define RED     "\x1b[31m"
-#define GREEN   "\x1b[32m"
-#define YELLOW  "\x1b[33m"
-#define BLUE    "\x1b[34m"
-#define RESET   "\x1b[0m"
 
 void debug(char* content){
   if (DEBUG) printf(YELLOW "DEBUG: %s" RESET, content);
@@ -49,9 +49,7 @@ typedef struct Runtime{
   int steps;
 } Runtime;
 
-
 char* tag_names[9] = { "App", "Lam", "Sup", "Dup", "Dup2", "Null", "Var", "Prim", "Freed" };
-
 
 char * node_format(Node* node){
   if (DEBUG >= 1){
@@ -62,9 +60,7 @@ char * node_format(Node* node){
   return tag_names[node->tag];
 }
 
-
-
-Node* new_node(Tag tag, int label, Node* s0, Node* s1, Runtime* runtime){
+Node* empty_node(int tag, int label, Runtime* runtime){
   Node* node = NULL;
   if (runtime->free_list != NULL){
     node = runtime->free_list;
@@ -76,12 +72,30 @@ Node* new_node(Tag tag, int label, Node* s0, Node* s1, Runtime* runtime){
   runtime->node_ctr ++;
   node->tag = tag;
   node->label = label;
+  node->s0 = NULL;
+  node->s1 = NULL;
+  return node;
+}
+
+void set_auxs(Node* node, Node* s0, Node* s1){
+  node->s0 = s0;
+  node->s1 = s1;
+}
+
+Node get_root(Runtime* runtime){return runtime->nodes[0];}
+int get_tag(Node* node){return node->tag;}
+int get_label(Node* node){return node->label;}
+Node* get_s0(Node* node){return node->s0;}
+Node* get_s1(Node* node){return node->s1;}
+
+
+Node* new_node(Tag tag, int label, Node* s0, Node* s1, Runtime* runtime){
+  Node* node = empty_node(tag, label, runtime);
   node->s0 = s0;
   node->s1 = s1;
   if (DEBUG >= 2) printf("new node: %s\n", node_format(node));
   return node;
 }
-
 
 
 
@@ -146,66 +160,6 @@ void free_node(Node* node, Runtime* runtime){
 typedef struct SQueue{ Node* node; int s0; int s1; struct SQueue* next; } SQueue;
 typedef struct SearchStack{ Node* node; struct SearchStack* next;} SearchStack;
 
-/* SERIALIZATION */
-
-int _enqueue(SQueue* queue, Node* node, int * ctr){
-  if (node == NULL) return 0;
-
-  int n = 0;
-  while (1){
-    if (queue->node == node) return n + 1;
-    n ++ ;
-    if (queue->next == NULL) break;
-    queue = queue->next;
-  }
-  
-  SQueue* new_node = calloc(1, sizeof(SQueue));
-  new_node->node = node;
-  queue->next = new_node;
-  (*ctr)++;
-
-  return n + 1;
-}
-
-
-int* serialize(Node* node){
-
-  SQueue* queue = malloc(sizeof(SQueue));
-  queue->node = node;
-  queue->next = NULL;
-  SQueue* current = queue;
-  int ctr = 1;
-
-  while (current != NULL){
-    Node* node = current->node;
-    current -> s0 = _enqueue(queue, node->s0, &ctr);
-    current -> s1 = _enqueue(queue, node->s1, &ctr);
-    current = current->next;
-  }
-
-  int* result = malloc(sizeof(int) * (ctr + 1) * 4);
-  current = queue;
-
-  result[0] = ctr;
-  ctr = 1;
-
-  if (DEBUG >= 2) printf("SERIALIZE: %d nodes\n", result[0]);
-
-  while (1){
-    result[ctr] = current->node->tag;
-    result[ctr + 1] = current->node->label;
-    result[ctr + 2] = current->s0;
-    result[ctr + 3] = current->s1;
-    
-    if (DEBUG >= 2) printf("  [%d] tag=%s label=%d s0=%d s1=%d\n", (ctr-1)/4 + 1, node_format(current->node), current->node->label, current->s0, current->s1);
-    ctr += 4;
-    SQueue* prev = current;
-    current = current->next;
-    if (current == NULL) break;
-    free(prev);
-  }
-  return result;
-}
 
 Node** mk_dup(Node* target, int label, Runtime* runtime){
   Node* dup1 = new_node(Tag_Dup, label, target, NULL, runtime);
@@ -232,11 +186,7 @@ void check_null(void* ptr, char* tag_name){
   }
 }
 
-
-
 void erase(Node* node, Runtime* runtime);
-
-
 
 void move(Node* src, Node* dst, Runtime* runtime){
   if (dst == NULL){
@@ -283,8 +233,6 @@ void erase(Node* node, Runtime* runtime){
   };
   free_node(node, runtime);
 }
-
-
 
 int APP_LAM(Node* App, Node* Lam, Runtime* runtime){
 
@@ -460,16 +408,12 @@ void stack_free(SearchStack** stack){
   *stack = NULL;
 }
 
-
 int full_search = 0;
 SearchStack* redex_seen = NULL; 
-
 
 int search_redex(Node* term, Runtime* runtime){
 
   if (fuel <= runtime->steps) return 0;
-
-
   if (term == NULL || term->s0 == NULL) return 0;
   Node* other = term->s0;
 
@@ -489,27 +433,19 @@ int search_redex(Node* term, Runtime* runtime){
     case Tag_Dup: case Tag_Dup2:
 
       if (full_search){
-        if (stack_has(redex_seen, term->s0)) {
-          return 0;
-        }
+        if (stack_has(redex_seen, term->s0)) {return 0;}
         stack_push(&redex_seen, term->s0);
       }
       if (search_redex(other, runtime)) return search_redex(term, runtime);
-
       return 0;
     case Tag_App:
       if (search_redex(other, runtime)) return search_redex(term, runtime);
-      if (full_search){
-        search_redex(term->s1, runtime);
-      }
+      if (full_search){search_redex(term->s1, runtime);}
       return 0;
-    
     case Tag_Var: case Tag_Null: case Tag_Prim: return 0;
     case Tag_Freed: error("Node is freed"); exit(1);
   }
 }
-
-
 
 int run(int Nsteps, Runtime* runtime){
   fuel = Nsteps;
@@ -529,55 +465,6 @@ int get_node_count(Runtime* runtime){
   return runtime->node_ctr;
 }
 
-Runtime* load(int* data, Runtime* runtime){
-
-  struct sigaction sa;
-  struct sigaction old_sa;
-  sa.sa_handler = segfault_handler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = 0;
-  sigaction(SIGSEGV, &sa, &old_sa);
-  
-  segfault_occurred = 0;
-  
-  if (setjmp(segfault_jmp) != 0) {
-    sigaction(SIGSEGV, &old_sa, NULL);
-    error("SEGFAULT caught in C code\n");
-  }
-
-  if (runtime != NULL) error("new_runtime: runtime already exists\n");
-  runtime = calloc(1, sizeof(Runtime));
-  int count = data[0];
-
-  if (DEBUG) printf("LOAD: %d nodes\n", count);
-
-  Node** nodes = malloc(sizeof(void*) * (count + 1));
-  nodes[0] = NULL;
-  
-  for (int i = 0; i < count; i++) {
-    int idx = i * 4 + 1;
-    Node* node = new_node(data[idx], data[idx + 1], NULL, NULL, runtime);
-    nodes[i + 1] = node;
-    if (DEBUG >= 2) printf("  created [%d] tag=%s label=%d\n", i + 1, node_format(node), data[idx + 1]);
-  }
-  
-  for (int i = 0; i < count; i++) {
-    int idx = i * 4 + 1;
-    int s0_idx = data[idx + 2];
-    int s1_idx = data[idx + 3];
-    nodes[i + 1]->s0 = nodes[s0_idx];
-    nodes[i + 1]->s1 = nodes[s1_idx];
-    if (DEBUG >= 2) printf("  connected [%d] s0=%d s1=%d\n", i + 1, s0_idx, s1_idx);
-  }
-  free(nodes);
-  return runtime;
-}
-
-
-int* unload(Runtime* runtime){
-  if (runtime == NULL) error("unload: runtime is NULL\n");
-  int* result = serialize(&(runtime->nodes[0]));
-  free(runtime);
-  runtime = NULL;
-  return result;
+Runtime* new_runtime(){
+  return calloc(1, sizeof(Runtime));
 }
