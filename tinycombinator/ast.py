@@ -1,6 +1,6 @@
 
 from enum import Enum, auto
-from typing import Callable
+from typing import Callable, Generator
 
 from tinycombinator.helpers import hide_dups, print_tree
 
@@ -45,6 +45,21 @@ class IC:
     if self.tag in [Tag.Lam, Tag.Dup, Tag.Dup2, Tag.App, Tag.Sup]: res.append(self.s0)
     if self.tag in [Tag.App, Tag.Sup]: res.append(self.s1)
     return res
+  
+  def set_port(self, side: int, port: "IC"):
+    if side == 0: self.s0 = port
+    else: self.s1 = port
+  
+  def all_srcs(self):
+    seen = set()
+    todo = [self]
+    while todo:
+      node = todo.pop()
+      if node in seen or node is None: continue
+      seen.add(node)
+      todo.extend([node.s0, node.s1])
+      yield node
+    
 
 
   @staticmethod
@@ -204,11 +219,9 @@ def tree(term:IC, ctx:dict[IC, int])->str:
       case Tag.App: return [f"("] + idn(_tree(term.s0, dstack)) + idn(_tree(term.s1, dstack), ")")
       case Tag.Dup | Tag.Dup2:
         if hide_dups: return _tree(term.s0, dstack + ([(term.label, term.tag == Tag.Dup2)]))
-
         d1 = term if (term.tag == Tag.Dup) else term.s1
         d2 = term if (term.tag == Tag.Dup2) else term.s1
         if d1 in ctx: return [varname(term)]
-        # return [f"&{term.label}{{{varname(d1)}, {varname(d2)}}} ="] + idn(_tree(term.s0, dstack)) + idn([f"in {varname(term)}"])
         return [f"{varname(term)} where &{term.label}{{{varname(d1)}, {varname(d2)}}} ="] + idn(_tree(term.s0, dstack))
 
       case Tag.Prim: return [str(term.label)]
