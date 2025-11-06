@@ -14,14 +14,14 @@ def nat(n:int)->IC:
 
 
   lam0, x0 = lamvar()
-  lam0.s0 = x0
+  lam0.s[0] = x0
 
   p = IC(Tag.Lam, lam0)
 
   for i in range(n):
     lam0 = IC(Tag.Lam)
     lams, xs = lamvar(lam0)
-    lam0.s0 = xs(p)
+    lam0.s[0] = xs(p)
     p = lams
   return p
 

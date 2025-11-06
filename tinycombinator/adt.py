@@ -20,10 +20,10 @@ class VariantType:
     lams = []
     for _ in range(len(self.type.variants)): lams.append(bod := IC(Tag.Lam, bod))
     bod = IC(Tag.Var, lams[self.index])
-    lams[-self.index-1].s1 = bod
+    lams[-self.index-1].s[1] = bod
 
     for arg in args: bod = bod(arg)
-    lams[0].s0 = bod
+    lams[0].s[0] = bod
     return lams[-1]
 
   def __repr__(self): return f"{self.name}"
@@ -37,7 +37,7 @@ class Adt:
 
   def match(self, **patterns):
     res = IC(lambda x:x)
-    for var in self.variants.keys(): res.s0 = res.s0(patterns[var])
+    for var in self.variants.keys(): res.s[0] = res.s[0](patterns[var])
     return res
   def __getattr__(self, name): return VariantType(self, name)
 

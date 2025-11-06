@@ -1,4 +1,5 @@
 #include <stdatomic.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -23,18 +24,68 @@ void error(char* content){
 
 typedef enum Tag{ Tag_App, Tag_Lam, Tag_Sup, Tag_Dup, Tag_Dup2, Tag_Null, Tag_Prim, Tag_Freed }Tag;
 
-typedef struct IC{ Tag tag; int label; struct IC* s0; struct IC* s1; }IC;
+
+
+typedef int32_t LOC;
+
+
+
+typedef struct IC{
+  Tag tag;
+  int label;
+  int32_t s[2]; // last bit signifies target side or if target is var of lam
+} IC;
+
+
+// for LAM s[1] is the var. its side points to the target port number.
+// for all other ports the side says whether its the var of a lam
 
 #define MAX_ICS 1<<20
 
 typedef struct Runtime{
-  IC* root;
+  LOC root;
   IC ICs[MAX_ICS];
   int empty_index;
   int IC_ctr;
-  IC* free_list;
+  LOC free_list;
   int steps;
 } Runtime;
+
+
+
+IC* get_ic(LOC l, Runtime* runtime){
+  return &runtime->ICs[l];
+}
+
+int get_tag(LOC l, Runtime* runtime){
+  return runtime->ICs[l].tag;
+}
+
+void set_port(LOC ic, int s, LOC target, int side, Runtime* runtime){
+  get_ic(ic, runtime)->s[s] = target << 1 | side;
+}
+
+
+int port_side( LOC l , int side, Runtime* runtime){
+  return runtime->ICs[l].s[side] & 1;
+}
+
+int port_target( LOC l, int side, Runtime* runtime){
+  return runtime->ICs[l].s[side] >> 1;
+}
+
+void var_lam(LOC lam, LOC target, int side, Runtime* runtime){
+  set_port(lam, 1, target, side, runtime);
+  set_port(target, side, lam, 1, runtime);
+}
+
+
+Runtime* new_runtime(){
+  Runtime* runtime = calloc(1, sizeof(Runtime));
+  return runtime;
+}
+
+
 
 char* tag_names[9] = { "App", "Lam", "Sup", "Dup", "Dup2", "Null", "Var", "Prim", "Freed" };
 
@@ -47,158 +98,129 @@ char * IC_format(IC* IC){
   return tag_names[IC->tag];
 }
 
-IC* empty_IC(int tag, int label, Runtime* runtime){
+LOC empty_IC(int tag, int label, Runtime* runtime){
 
+  LOC res = 0;
   IC* IC = NULL;
-  if (runtime->free_list != NULL){
-    IC = runtime->free_list;
-    runtime->free_list = IC->s0;
+  if (runtime->free_list != 0){
+    res = runtime->free_list;
+    IC = get_ic(res, runtime);
+    runtime->free_list = IC->s[0];
   }else{
-    IC = &runtime->ICs[runtime-> empty_index ++ ];
+    res = runtime->empty_index ++;
+    IC = get_ic(res, runtime);
     if (runtime->empty_index >= MAX_ICS) error("Error: MAX_ICS reached\n");
   }
   runtime->IC_ctr ++;
   IC->tag = tag;
   IC->label = label;
-  IC->s0 = NULL;
-  IC->s1 = NULL;
+  IC->s[0] = 0;
+  IC->s[1] = 0;
 
-  return IC;
+  return res;
 }
 
-void free_IC(IC* IC, Runtime* runtime){
+void free_IC(LOC loc, Runtime* runtime){
+  IC* IC = get_ic(loc, runtime);
   if (IC->tag == Tag_Freed){
     printf(RED "Error: IC %p is already freed\n", IC);
     exit(1);
   }
   IC->tag = Tag_Freed;
   runtime->IC_ctr --;
-  IC->s0 = runtime->free_list;
-  runtime->free_list = IC;
+  set_port(loc, 0, runtime->free_list, 0, runtime);
+  runtime->free_list = loc;
 }
 
-void set_port(IC* ic, int side, IC* port){
-  if (DEBUG >= 2) printf("set_port: %p %d %p\n", ic, side, port);
-  if (side == 0) ic->s0 = port;
-  else ic->s1 = port;
+LOC get_root(Runtime* runtime){
+  return runtime->root;
 }
 
-void set_auxs(IC* ic, IC* s0, IC* s1){
-  ic->s0 = s0;
-  ic->s1 = s1;
-}
-
-IC* get_root(Runtime* runtime){return runtime->root;}
-IC* set_root(IC* root, Runtime* runtime){runtime->root = root; return root;}
-int get_tag(IC* IC){return IC->tag;}
-int get_label(IC* IC){return IC->label;}
+void set_root(LOC root, Runtime* runtime){runtime->root = root;}
 
 
-IC* port_info(IC* ic, int s, int loc){
-  return loc ? (s ? (IC*) &(ic->s1) : (IC*) &(ic->s0)) : (s ? ic->s1 : ic->s0);
-}
+LOC ID(Runtime* runtime){
+  LOC id = empty_IC(Tag_Lam, 0, runtime);
+  // var_lam(id, id, 0, runtime);
 
-
-IC* new_IC(Tag tag, int label, IC* s0, IC* s1, Runtime* runtime){
-  IC* IC = empty_IC(tag, label, runtime);
-  IC->s0 = s0;
-  IC->s1 = s1;
-  if (DEBUG >= 2) printf("new IC: %s\n", IC_format(IC));
-  return IC;
-}
-
-
-Runtime* new_runtime(){
-  Runtime* runtime = calloc(1, sizeof(Runtime));
-  runtime->free_list = NULL;
-  return runtime;
-}
-
-
-typedef void* P;
-
-
-IC* ID(Runtime* runtime){
-  IC* id = empty_IC(Tag_Lam, 0, runtime);
-  IC** loc = &id->s0;
-  id->s1 = (IC*) loc;
+  set_port(id, 0, id, 1, runtime);
   return id;
-};
+}
 
-IC* c1(Runtime* runtime){
-  IC* l1 = empty_IC(Tag_Lam, 0, runtime);
-  IC* l2 = empty_IC(Tag_Lam, 0, runtime);
-  l1->s0 = l2;
-  l1->s1 = (IC*) &(l2->s0);
+
+LOC c1(Runtime* runtime){
+  LOC l1 = empty_IC(Tag_Lam, 0, runtime);
+  LOC l2 = empty_IC(Tag_Lam, 0, runtime);
+  var_lam(l1, l2, 0, runtime);
+  set_port(l1, 0, l2, 0, runtime);
   return l1;
 }
 
 
-
-IC* mk_app(IC* f, IC* x, Runtime* runtime){
-  IC* app = calloc(1, sizeof(IC));
-  app->tag = Tag_App;
-  app->s0 = f;
-  app->s1 = x;
-  return app;
+LOC mk_binary(Tag tag, int label, LOC s0, LOC s1, Runtime* runtime){
+  LOC res = empty_IC(tag, label, runtime);
+  set_port(res, 0, s0, 0, runtime);
+  set_port(res, 1, s1, 0, runtime);
+  return res;
 }
 
-void APP_LAM(IC** app, IC* lam, Runtime* runtime){
-  printf("APP_LAM\n");
-  IC** loc = (IC**) (*app)->s1;
 
 
 
-  (*app) = lam->s0;
-}
 
-void APP_SUP(IC** app, IC* sup, Runtime* runtime){
-  error("TODO");
-}
+// void APP_LAM(IC** app, IC* lam, Runtime* runtime){
+//   (* (IC**) lam->s[1]) = (*app)->s[1];
+//   (*app) = lam->s[0];
+// }
 
-void APP_NULL(IC** app, IC* null, Runtime* runtime){
-  error("TODO");
-}
-void DUP_LAM(IC** dup, IC* lam, Runtime* runtime){
-  error("TODO");
-}
-void DUP_SUP(IC** dup, IC* sup, Runtime* runtime){
-  error("TODO");
-}
-void DUP_NULL(IC** dup, IC* null, Runtime* runtime){
-  error("TODO");
-}
+// void APP_SUP(IC** app, IC* sup, Runtime* runtime){
+//   error("TODO APPSUP");
+// }
 
-int handle_redex(IC** term, IC* other, Runtime* runtime){
+// void APP_NULL(IC** app, IC* null, Runtime* runtime){
+//   error("TODO APPNULL");
+// }
 
-  void (*handler)(IC**, IC*, Runtime*) = NULL;
-  if ((*term)->tag == Tag_App){
-    handler = other->tag == Tag_Lam ? APP_LAM : other->tag == Tag_Sup ? APP_SUP : other->tag == Tag_Null ? APP_NULL : NULL;
-  }else if ((*term)->tag == Tag_Dup || (*term)->tag == Tag_Dup2){
-    handler = other->tag == Tag_Lam ? DUP_LAM : other->tag == Tag_Sup ? DUP_SUP : other->tag == Tag_Null ? DUP_NULL : NULL;
-  }
-  if (handler != NULL){
-    handler(term, other, runtime);
-    return 1;
-  }
-  return 0;
-}
+// void DUP_LAM(IC** dup, IC* lam, Runtime* runtime){
+//   error("TODO DUPLAM");
+// }
 
-void applam(IC** app, IC* lam, Runtime* runtime){
+// void DUP_SUP(IC** dup, IC* sup, Runtime* runtime){
+//   error("TODO DUPSUP");
+// }
+// void DUP_NULL(IC** dup, IC* null, Runtime* runtime){
+//   error("TODO DUPNULL");
+// }
 
-  IC** loc = (IC**) (lam)->s1;
-  *loc = (*app)->s1;
-  (*app) = lam->s0;
-}
+// int handle_redex(IC** term, IC* other, Runtime* runtime){
+
+//   void (*handler)(IC**, IC*, Runtime*) = NULL;
+//   if ((*term)->tag == Tag_App){
+//     handler = other->tag == Tag_Lam ? APP_LAM : other->tag == Tag_Sup ? APP_SUP : other->tag == Tag_Null ? APP_NULL : NULL;
+//   }else if ((*term)->tag == Tag_Dup || (*term)->tag == Tag_Dup2){
+//     handler = other->tag == Tag_Lam ? DUP_LAM : other->tag == Tag_Sup ? DUP_SUP : other->tag == Tag_Null ? DUP_NULL : NULL;
+//   }
+//   if (handler != NULL){
+//     handler(term, other, runtime);
+//     return 1;
+//   }
+//   return 0;
+// }
+
+// void applam(IC** app, IC* lam, Runtime* runtime){
+
+//   IC** loc = (IC**) (lam)->s[1];
+//   *loc = (*app)->s[1];
+//   (*app) = lam->s[0];
+// }
 
 
 int run(int Nsteps, Runtime* runtime){
+  // runtime->root = c1(runtime);
 
-  IC* term = runtime->root;
 
-  applam(&runtime->root, runtime->root->s0, runtime);
 
-  return 1; 
+  runtime->root = ID(runtime);
 
+  return 1;
 }
-
