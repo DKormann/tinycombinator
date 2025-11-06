@@ -1,11 +1,11 @@
 
 
 from enum import Enum, auto
-from typing import Callable, Generator, List
+from typing import Callable, Generator, List, Union
 
 from tinycombinator.helpers import hide_dups, print_tree
 
-from dataclasses import dataclass
+
 
 
 
@@ -26,75 +26,64 @@ class Tag(Enum):
 
 
 
-# @dataclass
 class Port:
-  target: "IC"
-  side: int
+  def __init__(self, target: "IC", side: int = 0):
+    self.target = target
+    self.side = side
 
 
 
-# @dataclass
 class IC:
-  ports: List[Port]
-  tag: Tag
-  label: int
-
-
-
-# def tree(term:IC, ctx:dict[IC, int])->str:
-#   ws = "  " if print_tree else ""
-#   def varname(node:IC | None):
-#     if node is None: return ""
-#     name = chr(len(ctx) % 26 + 97) + ("" if len(ctx) < 26 else chr(len(ctx) // 26 + 97))
-#     return ctx.setdefault(node, name)
-#   def idn(lns:list[str], end = "")->list[str]:
-#     lns = lns[:-1] + [lns[-1] + end]
-#     if sum(len(ln) for ln in lns) <= 20: return [ws + " ".join(map(str.strip, lns))]
-#     return [ws + ln for ln in lns]
-
-#   def _tree(term:IC | None, dstack:list[tuple[int, bool]])->list[str]:
-#     if term is None: return ["NONE"]
-#     match term.tag:
-#       case Tag.Lam: return [f"λ{varname(term.s1)} " + (p := _tree(term.s0, dstack))[0].strip()] + p[1:]
-#       case Tag.Sup:
-#         for i, (label, is_dup2) in reversed(list(enumerate(dstack))):
-#           if term.label == label: return _tree(term.s1 if is_dup2 else term.s0, dstack[:i] + dstack[i+1:])
-#         return [f"&{term.label}{{"] + idn(_tree(term.s0, dstack)) + idn(_tree(term.s1, dstack), "}")
-        
-#       case Tag.App: return [f"("] + idn(_tree(term.s0, dstack)) + idn(_tree(term.s1, dstack), ")")
-#       case Tag.Dup | Tag.Dup2:
-#         if hide_dups: return _tree(term.s0, dstack + ([(term.label, term.tag == Tag.Dup2)]))
-#         d1 = term if (term.tag == Tag.Dup) else term.s1
-#         d2 = term if (term.tag == Tag.Dup2) else term.s1
-#         if d1 in ctx: return [varname(term)]
-#         return [f"{varname(term)} where &{term.label}{{{varname(d1)}, {varname(d2)}}} ="] + idn(_tree(term.s0, dstack))
-
-#       case Tag.Prim: return [str(term.label)]
-#       case Tag.Null: return ["Nul"]
-#     return [varname(term)]
-#   return ("\n" if print_tree else " ").join(_tree(term, []))
+  def __init__(self, tag: Tag, label: int = 0, s0: Union[Port, "IC", None] = None, s1: Union[Port, "IC", None] = None):
+    self.tag = tag
+    self.label = label
+    self.s = [
+      None if s is None else (s if isinstance(s, Port) else Port(s, 0))
+      for s in [s0, s1]
+    ]
 
 
 
 
-def tree(ic: IC)->str:
 
+
+def tree(term:IC)->str:
   ws = "  " if print_tree else ""
-
+  ctx = {}
+  def varname(node:IC | None):
+    if node is None: return ""
+    name = chr(len(ctx) % 26 + 97) + ("" if len(ctx) < 26 else chr(len(ctx) // 26 + 97))
+    return ctx.setdefault(node, name)
   def idn(lns:list[str], end = "")->list[str]:
     lns = lns[:-1] + [lns[-1] + end]
     if sum(len(ln) for ln in lns) <= 20: return [ws + " ".join(map(str.strip, lns))]
     return [ws + ln for ln in lns]
-
-  def go(ic: IC, dstack:list[tuple[int, bool]])->list[str]:
-    match ic.tag:
-      case Tag.Lam:
-        return [f"λ"]
   
-  return go(ic, [])
+  def _tree(term:Port)->list[str]:
+    if term is None: return ["NONE"]
+    if (term.side == 1): return [varname(term.target)]
+    term = term.target
+    match term.tag:
+      case Tag.Lam: return idn([f"λ" + varname(term)] + _tree(term.s[0]))
+      case Tag.App: return idn(_tree(term.s[0])) + idn(_tree(term.s[1]))
+      case Tag.Sup: return idn([f"&{term.label}{{{varname(term.s[0])}, {varname(term.s[1])}}}"])
+      case Tag.Dup: return idn([f"{varname(term)} where &{term.label}{{{varname(term.s[0])}, {varname(term.s[1])}}} ="] + _tree(term.s[0]))
+      case Tag.Dup2: return idn([f"{varname(term)} where &{term.label}{{{varname(term.s[0])}, {varname(term.s[1])}}} ="] + _tree(term.s[0]))
+      case Tag.Null: return ["Nul"]
+      case Tag.Prim: return [str(term.label)]
+      case Tag.Freed: return ["Freed"]
+      case Tag.intermediate_var: return [varname(term)]
+  return ("\n" if print_tree else " ").join(_tree(Port(term)))
+
 
 
 
 
 def ast_main():
-  print(tree)
+  b = IC(Tag.Lam)
+  a = IC(Tag.Lam, b, b)
+  b.s[0] = Port(a, 1)
+
+  
+
+  print(tree(a))

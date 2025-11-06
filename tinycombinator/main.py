@@ -7,7 +7,7 @@ from typing import Callable, Dict, Set
 # from tinycombinator.run import reduce
 from tinycombinator.ast import IC, ast_main
 
-ast_main()
+
 # from tinycombinator.helpers import BACKEND, DEBUG, TIMEIT, hide_dups
 
 
@@ -196,41 +196,41 @@ def execute(node:IC, *args, **kwargs)->Callable[[IC, int, int], IC]:
 
 
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
 
-#   ast_main()
+  ast_main()
 
-#   # rt = get_lib().new_runtime()
-#   # get_lib().run(1, rt)  
-#   # unload_term_c(rt)
-
-
-
-#   # term = IC(lambda x:x)
-
-#   # rt = load_term_c(term)
-
-#   # res = unload_term_c(rt)
-#   # print(res)
+  # rt = get_lib().new_runtime()
+  # get_lib().run(1, rt)  
+  # unload_term_c(rt)
 
 
-#   # # term = IC(lambda x,y: x) (lambda z:z)
-#   # # term = term.run()
 
-#   # # # assert str(term) == "λ λa a"
-#   # # print(term)
+  # term = IC(lambda x:x)
 
-#   # # # term = IC(lambda x:x)
-#   # # # ds = dup(term)
-#   # # # print(ds[0])
+  # rt = load_term_c(term)
 
-#   # # # rt = load_term_c(ds[0])
+  # res = unload_term_c(rt)
+  # print(res)
 
-#   # # # run(rt, 1)
 
-#   # # # term = unload_term_c(rt)
+  # # term = IC(lambda x,y: x) (lambda z:z)
+  # # term = term.run()
 
-#   # # # print(term)
+  # # # assert str(term) == "λ λa a"
+  # # print(term)
+
+  # # # term = IC(lambda x:x)
+  # # # ds = dup(term)
+  # # # print(ds[0])
+
+  # # # rt = load_term_c(ds[0])
+
+  # # # run(rt, 1)
+
+  # # # term = unload_term_c(rt)
+
+  # # # print(term)
 
 
 
