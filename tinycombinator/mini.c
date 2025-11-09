@@ -13,7 +13,7 @@ typedef struct Node {
   
 }Node;
 
-struct Fun{
+struct  Fun{
   Node* node;
   P (*app) (P arg);
 } Method;

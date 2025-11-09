@@ -1,5 +1,5 @@
 from functools import cached_property
-from tinycombinator.ast import IC, Tag
+from tinycombinator.ic import Node, Tag
 from typing import Dict
 from dataclasses import dataclass
 
@@ -15,11 +15,11 @@ class VariantType:
   def size(self)->int: return len(self.type.variants[self.name])
 
 
-  def __call__(self, *args)-> IC:
+  def __call__(self, *args)-> Node:
     bod = None
     lams = []
-    for _ in range(len(self.type.variants)): lams.append(bod := IC(Tag.Lam, bod))
-    bod = IC(Tag.Var, lams[self.index])
+    for _ in range(len(self.type.variants)): lams.append(bod := Node(Tag.Lam, bod))
+    bod = Node(Tag.Var, lams[self.index])
     lams[-self.index-1].s[1] = bod
 
     for arg in args: bod = bod(arg)
@@ -36,7 +36,7 @@ class Adt:
   def __repr__(self): return f"Adt({self.variants})"
 
   def match(self, **patterns):
-    res = IC(lambda x:x)
+    res = Node(lambda x:x)
     for var in self.variants.keys(): res.s[0] = res.s[0](patterns[var])
     return res
   def __getattr__(self, name): return VariantType(self, name)

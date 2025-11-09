@@ -1,20 +1,20 @@
 
 from typing import Callable
-from tinycombinator.ast import IC, Tag, app, lam, move, null, parse_lam, sup, x, dup
+from tinycombinator.ic import Node, Tag, app, lam, move, null, parse_lam, sup, x, dup
 from tinycombinator.helpers import hide_dups
 
 
 def id(): return lam(x(0))
 
 
-def T(): return IC(lambda x, y: x)
-def F(): return IC(lambda x, y: y)
+def T(): return Node(lambda x, y: x)
+def F(): return Node(lambda x, y: y)
 
 def cnat(n:int):
   def go(n:int, f, x):
     if n == 0: return x
     return f(go(n-1, f, x))
-  return IC(lambda f, x: go(n, f, x))
+  return Node(lambda f, x: go(n, f, x))
 
 def circular(option1:int, option2:int):
   aux = [null(), null()]
@@ -23,7 +23,7 @@ def circular(option1:int, option2:int):
   return dups[not option1]
 
 
-def fmt_eq(a:IC, b:IC):
+def fmt_eq(a:Node, b:Node):
   return str(a) == str(b)
 
 if __name__ == "__main__":
