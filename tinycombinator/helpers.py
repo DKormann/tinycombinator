@@ -30,6 +30,9 @@ class Env:
     finally: self.value = old_value
 
 
+def debug(*args, level=0):
+  if DEBUG.get() > level: print(*args)
+
 hide_dups = Env("hide_dups", False)
 print_tree = Env("print_tree", True)
 DEBUG = Env("DEBUG", 0)

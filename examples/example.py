@@ -1,8 +1,8 @@
-from tinycombinator import IC, execute
+from tinycombinator import Node, execute
 
 
 
-c = IC(lambda x: x)(lambda y: y)
+c = Node(lambda x: x)(lambda y: y)
 
 d = c.run()
 

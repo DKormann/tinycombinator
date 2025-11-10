@@ -1,6 +1,7 @@
 """tinycombinator - Interaction calculus runtime implementation"""
 
-from tinycombinator.ast import IC, Tag
-from tinycombinator.main import execute
+from tinycombinator.nodes import Node, Tag
 
-__all__ = ["IC", "Tag", "execute"]
+# from tinycombinator.main import execute
+
+__all__ = ["Node", "Tag"]

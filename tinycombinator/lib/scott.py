@@ -6,42 +6,42 @@ from operator import truediv
 from tinycombinator.lib.terms import F, T, cnat
 from tinycombinator.main import execute
 
-from tinycombinator.ast import  IC, Tag, app, hide_dups, lam, lamvar, move, null, parse_lam, print_tree, sup, x, dup
+from tinycombinator.nodes import  Node, Tag, app, hide_dups, lam, lamvar, move, null, parse_lam, print_tree, sup, x, dup
 
 
 
-def nat(n:int)->IC:
+def nat(n:int)->Node:
 
 
   lam0, x0 = lamvar()
-  lam0.s0 = x0
+  lam0.s[0] = x0
 
-  p = IC(Tag.Lam, lam0)
+  p = Node(Tag.Lam, lam0)
 
   for i in range(n):
-    lam0 = IC(Tag.Lam)
+    lam0 = Node(Tag.Lam)
     lams, xs = lamvar(lam0)
-    lam0.s0 = xs(p)
+    lam0.s[0] = xs(p)
     p = lams
   return p
 
 
-def iden()->IC:
-  return IC(lambda x: x)
+def iden()->Node:
+  return Node(lambda x: x)
 
 
-def Y_comb()->IC:
-  return IC(lambda f: IC(lambda x: f(x(x))) (IC(lambda x: f(x(x)))))
+def Y_comb()->Node:
+  return Node(lambda f: Node(lambda x: f(x(x))) (Node(lambda x: f(x(x)))))
 
 
-def is_z()->IC:
-  return IC(lambda n: n(
+def is_z()->Node:
+  return Node(lambda n: n(
     lambda s: F(),
     T()
   ))
 
-def rec0()->IC:
-  return IC(
+def rec0()->Node:
+  return Node(
     lambda self, n: n(
       lambda s: self(s),
       nat(0)
@@ -49,11 +49,11 @@ def rec0()->IC:
   )
 
 
-def suc(x:IC)->IC:
-  return IC( lambda s,z: s(x))
+def suc(x:Node)->Node:
+  return Node( lambda s,z: s(x))
 
-def rec_copy()->IC:
-  return IC(
+def rec_copy()->Node:
+  return Node(
     lambda self, x: x(
       lambda s: suc(self(s)),
       nat(0)
@@ -61,12 +61,12 @@ def rec_copy()->IC:
   )
 
 
-def T()->IC: return IC(lambda t, f: t)
+def T()->Node: return Node(lambda t, f: t)
 
-def F()->IC: return IC(lambda t, f: f)
+def F()->Node: return Node(lambda t, f: f)
 
 
-def eq()->IC:
+def eq()->Node:
   return Y_comb()(
     lambda self, x, y: x(
       lambda px: y(
@@ -94,7 +94,7 @@ def run_scott_eq_3():
 
 
 def try_era_var():
-  c = dup(IC(F))[0]
+  c = dup(Node(F))[0]
   print(c)
   c = run_term_c(c)
   print(c)

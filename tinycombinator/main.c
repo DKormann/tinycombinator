@@ -1,10 +1,8 @@
-
 #include <stdatomic.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <signal.h>
-#include <setjmp.h>
 
 
 #define RED     "\x1b[31m"
@@ -13,458 +11,216 @@
 #define BLUE    "\x1b[34m"
 #define RESET   "\x1b[0m"
 
-static jmp_buf segfault_jmp;
-static volatile sig_atomic_t segfault_occurred = 0;
-
-void segfault_handler(int sig) {
-  segfault_occurred = 1;
-  longjmp(segfault_jmp, 1);
-}
 
 int DEBUG = 1;
 void set_debug(int debug){ DEBUG = debug; }
 
-
-void debug(char* content){
-  if (DEBUG) printf(YELLOW "DEBUG: %s" RESET, content);
-  
-}
+void debug(char* content){if (DEBUG) printf(YELLOW "DEBUG: %s" RESET, content);}
 
 void error(char* content){
   fprintf(stderr, RED "Error: %s\n" RESET, content);
   exit(1);
 }
 
-typedef enum Tag{ Tag_App, Tag_Lam, Tag_Sup, Tag_Dup, Tag_Dup2, Tag_Null, Tag_Var, Tag_Prim, Tag_Freed }Tag;
+typedef enum Tag{ Tag_App, Tag_Lam, Tag_Sup, Tag_Dup, Tag_Dup2, Tag_Null, Tag_Prim, Tag_Freed }Tag;
 
-typedef struct Node{ Tag tag; int label; struct Node* s0; struct Node* s1; }Node;
 
-#define MAX_NODES 1<<20
+
+typedef int32_t LOC;
+
+
+
+typedef struct IC{
+  Tag tag;
+  int label;
+  int32_t s[2]; // last bit signifies target side or if target is var of lam
+} IC;
+
+
+// for LAM s[1] is the var. its side points to the target port number.
+// for all other ports the side says whether its the var of a lam
+
+#define MAX_ICS 1<<20
 
 typedef struct Runtime{
-  Node nodes[MAX_NODES];
+  LOC root;
+  IC ICs[MAX_ICS];
   int empty_index;
-  int node_ctr;
-  Node* free_list;
+  int IC_ctr;
+  LOC free_list;
   int steps;
 } Runtime;
 
+
+
+IC* get_ic(LOC l, Runtime* runtime){
+  return &runtime->ICs[l];
+}
+
+int get_tag(LOC l, Runtime* runtime){
+  return runtime->ICs[l].tag;
+}
+
+void set_port(LOC ic, int s, LOC target, int side, Runtime* runtime){
+  get_ic(ic, runtime)->s[s] = target << 1 | side;
+}
+
+
+int port_side( LOC l , int side, Runtime* runtime){
+  return runtime->ICs[l].s[side] & 1;
+}
+
+int port_target( LOC l, int side, Runtime* runtime){
+  return runtime->ICs[l].s[side] >> 1;
+}
+
+void var_lam(LOC lam, LOC target, int side, Runtime* runtime){
+  set_port(lam, 1, target, side, runtime);
+  set_port(target, side, lam, 1, runtime);
+}
+
+
+Runtime* new_runtime(){
+  Runtime* runtime = calloc(1, sizeof(Runtime));
+  return runtime;
+}
+
+
+
 char* tag_names[9] = { "App", "Lam", "Sup", "Dup", "Dup2", "Null", "Var", "Prim", "Freed" };
 
-char * node_format(Node* node){
+char * IC_format(IC* IC){
   if (DEBUG >= 1){
     char*buf = malloc(sizeof(char) * 20);
-    sprintf(buf, "%s %p", tag_names[node->tag], node);
+    sprintf(buf, "%s %p", tag_names[IC->tag], IC);
     return buf;
   }
-  return tag_names[node->tag];
+  return tag_names[IC->tag];
 }
 
-Node* empty_node(int tag, int label, Runtime* runtime){
-  Node* node = NULL;
-  if (runtime->free_list != NULL){
-    node = runtime->free_list;
-    runtime->free_list = node->s0;
+LOC empty_IC(int tag, int label, Runtime* runtime){
+
+  LOC res = 0;
+  IC* IC = NULL;
+  if (runtime->free_list != 0){
+    res = runtime->free_list;
+    IC = get_ic(res, runtime);
+    runtime->free_list = IC->s[0];
   }else{
-    node = &runtime->nodes[runtime-> empty_index ++ ];
-    if (runtime->empty_index >= MAX_NODES) error("Error: MAX_NODES reached\n");
+    res = runtime->empty_index ++;
+    IC = get_ic(res, runtime);
+    if (runtime->empty_index >= MAX_ICS) error("Error: MAX_ICS reached\n");
   }
-  runtime->node_ctr ++;
-  node->tag = tag;
-  node->label = label;
-  node->s0 = NULL;
-  node->s1 = NULL;
-  return node;
-}
+  runtime->IC_ctr ++;
+  IC->tag = tag;
+  IC->label = label;
+  IC->s[0] = 0;
+  IC->s[1] = 0;
 
-void set_auxs(Node* node, Node* s0, Node* s1){
-  node->s0 = s0;
-  node->s1 = s1;
-}
-
-Node get_root(Runtime* runtime){return runtime->nodes[0];}
-int get_tag(Node* node){return node->tag;}
-int get_label(Node* node){return node->label;}
-Node* get_s0(Node* node){return node->s0;}
-Node* get_s1(Node* node){return node->s1;}
-
-
-Node* new_node(Tag tag, int label, Node* s0, Node* s1, Runtime* runtime){
-  Node* node = empty_node(tag, label, runtime);
-  node->s0 = s0;
-  node->s1 = s1;
-  if (DEBUG >= 2) printf("new node: %s\n", node_format(node));
-  return node;
-}
-
-
-
-typedef struct Prim{
-  void* value;
-  int arity;
-  int arg_count;
-  struct Node** args;
-  int ref_count;
-}Prim;
-
-Prim* take_prim(Prim* prim){
-  prim->ref_count ++;
-  return prim;
-}
-
-void release_prim(Prim* prim){
-  prim->ref_count --;
-  if (prim->ref_count <= 0){
-    free(prim->value);
-    free(prim);
-  }
-}
-
-Node* prim_add(Node** args, Runtime* runtime){
-  Node* a = args[0];
-  Node* b = args[1];
-  int * A = (int*) a->s0;
-  int * B = (int*) b->s0;
-  int * res = malloc(sizeof(int));
-  *res = *A + *B;
-  return new_node(Tag_Prim, 0, (Node*) res, NULL, runtime);
-}
-
-
-
-Node* new_prim(void* value, int arity){
-  Prim* prim = calloc(1, sizeof(Prim));
-  prim->value = value;
-  prim->arity = arity;
-  prim->args = calloc(arity, sizeof(Node*));
-  return new_node(Tag_Prim, 0, (Node*) prim, NULL, NULL);
-}
-
-
-void free_node(Node* node, Runtime* runtime){
-  if (DEBUG && node->tag == Tag_Freed){
-    printf("Error: Node %p is already freed\n", node);
-    exit(1);
-  }
-  if (DEBUG >= 2){
-    printf("free node %p ", node);
-    printf("tag: %s ", node_format(node));
-  }
-  if (node->tag == Tag_Prim) release_prim((Prim*) node->s0);
-  node->tag = Tag_Freed;
-  runtime->node_ctr --;
-  node->s0 = runtime->free_list;
-  runtime->free_list = node;
-}
-
-typedef struct SQueue{ Node* node; int s0; int s1; struct SQueue* next; } SQueue;
-typedef struct SearchStack{ Node* node; struct SearchStack* next;} SearchStack;
-
-
-Node** mk_dup(Node* target, int label, Runtime* runtime){
-  Node* dup1 = new_node(Tag_Dup, label, target, NULL, runtime);
-  Node* dup2 = new_node(Tag_Dup2, label, target, dup1, runtime);
-  dup1->s1 = dup2;
-
-  Node**res = malloc(sizeof(Node*) * 2);
-  res[0] = dup1;
-  res[1] = dup2;
   return res;
 }
 
-Node* sup(Node* a, Node* b, int label, Runtime* runtime){
-  if (a == NULL) a = new_node(Tag_Null, 0, NULL, NULL, runtime);
-  if (b == NULL) b = new_node(Tag_Null, 0, NULL, NULL, runtime);
-  return new_node(Tag_Sup, label, a, b, runtime);
-}
-
-
-void check_null(void* ptr, char* tag_name){
-  if (ptr == NULL){
-    printf("Error: %s is NULL\n", tag_name);
+void free_IC(LOC loc, Runtime* runtime){
+  IC* IC = get_ic(loc, runtime);
+  if (IC->tag == Tag_Freed){
+    printf(RED "Error: IC %p is already freed\n", IC);
     exit(1);
   }
+  IC->tag = Tag_Freed;
+  runtime->IC_ctr --;
+  set_port(loc, 0, runtime->free_list, 0, runtime);
+  runtime->free_list = loc;
 }
 
-void erase(Node* node, Runtime* runtime);
-
-void move(Node* src, Node* dst, Runtime* runtime){
-  if (dst == NULL){
-    erase(src, runtime);
-    return;
-  }
-  if (DEBUG) printf("move %s %p -> %p\n", node_format(src), src, dst);
-
-  dst->tag = src->tag;
-  dst->s0 = src->s0;
-  dst->s1 = src->s1;
-
-  dst->label = src->label;
-  if (src->tag == Tag_Var){
-    if (src->s0->tag != Tag_Lam) error("Error: Invalid tag for lam in move\n");
-    src->s0->s1 = dst;
-  }
-  if (src->tag == Tag_Lam && src->s1 != NULL){
-    if (src->s1->tag != Tag_Var) error("Error: Invalid tag for var in move\n");
-    src->s1->s0 = dst;
-  }
-  if (src->tag == Tag_Dup || src->tag == Tag_Dup2){
-    if (dst->s1 != NULL)dst->s1->s1 = dst;
-  }
-  free_node(src, runtime);
+LOC get_root(Runtime* runtime){
+  return runtime->root;
 }
 
-void erase(Node* node, Runtime* runtime){
-  switch (node->tag){
-    case Tag_App:
-    case Tag_Sup: erase(node->s1, runtime);
-    case Tag_Lam: erase(node->s0, runtime); break;
-    case Tag_Var: break;
-    case Tag_Dup:
-    case Tag_Dup2:{
-      if (node->s1 == NULL) erase(node->s0, runtime);
-      else node->s1->s1 = NULL;
-      break;
-    }
-    case Tag_Prim:
-    case Tag_Null: break;
-    case Tag_Freed: error("Node is freed");
+void set_root(LOC root, Runtime* runtime){runtime->root = root;}
 
-  };
-  free_node(node, runtime);
-}
 
-int APP_LAM(Node* App, Node* Lam, Runtime* runtime){
+LOC ID(Runtime* runtime){
+  LOC id = empty_IC(Tag_Lam, 0, runtime);
+  // var_lam(id, id, 0, runtime);
 
-  Node* arg = App->s1;
-  Node* var = Lam->s1;
-  Node* body = Lam->s0;
-
-  if (var != NULL){
-    move(arg, var, runtime);
-    move(body, App, runtime);
-    if (Lam->s1 != NULL && Lam->s1->s0 == Lam) {printf("cannot free lam %p it has a var\n", Lam); exit(1);}
-  }else{
-    move(body, App, runtime);
-    erase(arg, runtime);
-  }
-
-  free_node(Lam, runtime);
-  return 1;
-}
-
-int APP_SUP(Node* App, Node* Sup, Runtime* runtime){
-
-  Node** dups = malloc(sizeof(Node*) * 2);
-
-  dups[0] = new_node(Tag_Dup, Sup->label, App->s1, NULL, runtime);
-  dups[1] = new_node(Tag_Dup2, Sup->label, App->s1, dups[0], runtime);
-  dups[0]->s1 = dups[1];
-  
-  move(sup(new_node(Tag_App, 0, Sup->s0, dups[0], runtime), new_node(Tag_App, 0, Sup->s1, dups[1], runtime), Sup->label, runtime), App, runtime);
-  free(dups);
-  return 1;
-}
-
-int APP_PRIM(Node* App, Node* Pri, Runtime* runtime){
-  Prim* P = (Prim*) Pri->s0;
-  
-  P->args[P->arg_count++] = App->s1;
-  if (P->arg_count == P->arity){
-    Node* (*f)(Node**, Runtime*) = P->value;
-    Node* res = f(P->args, runtime);
-    move(res, App, runtime);
-    for (int i = 0; i < P->arg_count; i++) free_node(P->args[i], runtime);
-    return 1;
-  }
-
-  move(Pri, App, runtime);
-  free_node(Pri, runtime);
-  return 1;
+  set_port(id, 0, id, 1, runtime);
+  return id;
 }
 
 
-int APP_NULL(Node* App, Node* Null, Runtime* runtime){
-  erase(App->s1, runtime);
-  move(Null, App, runtime);
-  return 1;
+LOC c1(Runtime* runtime){
+  LOC l1 = empty_IC(Tag_Lam, 0, runtime);
+  LOC l2 = empty_IC(Tag_Lam, 0, runtime);
+  var_lam(l1, l2, 0, runtime);
+  set_port(l1, 0, l2, 0, runtime);
+  return l1;
+}
+
+
+LOC mk_binary(Tag tag, int label, LOC s0, LOC s1, Runtime* runtime){
+  LOC res = empty_IC(tag, label, runtime);
+  set_port(res, 0, s0, 0, runtime);
+  set_port(res, 1, s1, 0, runtime);
+  return res;
 }
 
 
 
-int DUP_LAM(Node* dup, Node* Lam, Runtime* runtime){
-  Node* da = dup->tag == Tag_Dup ? dup : dup->s1;
-  Node* db = dup->tag == Tag_Dup2 ? dup : dup->s1;
-
-  if (DEBUG) printf("da:%p db:%p lam:%p var:%p\n",  da, db, Lam, Lam->s1);
-
-  int label = da == NULL ? db->label : da->label;
-  Node** dbody = mk_dup(Lam->s0, label, runtime);
-
-  Node* vara = NULL;
-  Node* varb = NULL;
-  Node* funa = NULL;
-  Node* funb = NULL;
-
-  if (da != NULL){
-    funa = new_node(Tag_Lam,0, NULL, NULL, runtime);
-    vara = new_node(Tag_Var, 0, NULL, NULL, runtime);
-    funa->s0 = dbody[0];
-    vara->s0 = funa;
-    funa->s1 = vara;
-    move(funa, da, runtime);
-  }
-
-  if (db != NULL){
-    funb = new_node(Tag_Lam,0, NULL, NULL, runtime);
-    varb = new_node(Tag_Var, 0, NULL, NULL, runtime);
-    funb->s0 = dbody[1];
-    varb->s0 = funb;
-    funb->s1 = varb;
-    move(funb, db, runtime);
-  }
-
-  if (Lam->s1 != NULL){
-    move(sup(vara, varb, label, runtime), Lam->s1, runtime);
-  }
-  return 1;
-}
-
-int DUP_SUP(Node* dup, Node* Sup, Runtime* runtime){
-
-  Node* da = dup->tag == Tag_Dup ? dup : dup->s1;
-  Node* db = dup->tag == Tag_Dup2 ? dup : dup->s1;
-  int label = da == NULL ? db->label : da->label;
-  if (Sup->label == label){
-    if (Sup->s0 == db || Sup->s1 == db){
-      move(Sup->s1, db, runtime);
-      move(Sup->s0, da, runtime);
-    }else{
-      move(Sup->s0, da, runtime);
-      move(Sup->s1, db, runtime);
-    }
-  } else {
-    Node** dup1 = mk_dup(Sup->s0, label, runtime);
-    Node** dup2 = mk_dup(Sup->s1, label, runtime);
-    move(sup(dup1[0], dup2[0], Sup->label, runtime), da, runtime);
-    move(sup(dup1[1], dup2[1], Sup->label, runtime), db, runtime);
-    free(dup1);
-    free(dup2);
-  }
-
-  free_node(Sup, runtime);
-  return 1;
-}
 
 
-int DUP_NULL(Node* dup, Node* Null, Runtime* runtime){
-  Node* da = dup->tag == Tag_Dup ? dup : dup->s1;
-  Node* db = dup->tag == Tag_Dup2 ? dup : dup->s1;
-  da->tag = Tag_Null;
-  move(Null, db, runtime);
-  return 1;
-}
+// void APP_LAM(IC** app, IC* lam, Runtime* runtime){
+//   (* (IC**) lam->s[1]) = (*app)->s[1];
+//   (*app) = lam->s[0];
+// }
 
-int fuel = 0;
+// void APP_SUP(IC** app, IC* sup, Runtime* runtime){
+//   error("TODO APPSUP");
+// }
 
-int handle_redex(Node* term, Node* other, Runtime* runtime){
+// void APP_NULL(IC** app, IC* null, Runtime* runtime){
+//   error("TODO APPNULL");
+// }
 
-  if (fuel <= runtime->steps) return 0;
+// void DUP_LAM(IC** dup, IC* lam, Runtime* runtime){
+//   error("TODO DUPLAM");
+// }
 
-  int (*handler)(Node*, Node*, Runtime*) = NULL;
-  if (term->tag == Tag_App) handler = other->tag == Tag_Lam ? APP_LAM : other->tag == Tag_Sup ? APP_SUP : other->tag == Tag_Null ? APP_NULL : NULL;
-  else if (term->tag == Tag_Dup || term->tag == Tag_Dup2) handler = other->tag == Tag_Lam ? DUP_LAM : other->tag == Tag_Sup ? DUP_SUP : other->tag == Tag_Null ? DUP_NULL : NULL;
-  if (handler != NULL){
-    runtime->steps ++;
-    if (DEBUG) printf(BLUE "%d: HANDLE %s -> %s\n" RESET, runtime->steps, node_format(term), node_format(other));
-    return handler(term, other, runtime);
-  }
-  return 0;
-}
+// void DUP_SUP(IC** dup, IC* sup, Runtime* runtime){
+//   error("TODO DUPSUP");
+// }
+// void DUP_NULL(IC** dup, IC* null, Runtime* runtime){
+//   error("TODO DUPNULL");
+// }
 
-int stack_has(SearchStack* stack,Node* term){
-  SearchStack* current = stack;
-  while (current != NULL){
-    if (current->node == term) return 1;
-    current = current->next;
-  }
-  return 0;
-}
+// int handle_redex(IC** term, IC* other, Runtime* runtime){
 
-void stack_push(SearchStack** stack, Node* term){
-  SearchStack* tmp = (*stack);
-  (*stack) = malloc(sizeof(SearchStack));
-  (*stack)->node = term;
-  (*stack)->next = tmp;
-}
+//   void (*handler)(IC**, IC*, Runtime*) = NULL;
+//   if ((*term)->tag == Tag_App){
+//     handler = other->tag == Tag_Lam ? APP_LAM : other->tag == Tag_Sup ? APP_SUP : other->tag == Tag_Null ? APP_NULL : NULL;
+//   }else if ((*term)->tag == Tag_Dup || (*term)->tag == Tag_Dup2){
+//     handler = other->tag == Tag_Lam ? DUP_LAM : other->tag == Tag_Sup ? DUP_SUP : other->tag == Tag_Null ? DUP_NULL : NULL;
+//   }
+//   if (handler != NULL){
+//     handler(term, other, runtime);
+//     return 1;
+//   }
+//   return 0;
+// }
 
+// void applam(IC** app, IC* lam, Runtime* runtime){
 
-void stack_free(SearchStack** stack){
-  while (*stack != NULL){
-    SearchStack* tmp = *stack;
-    *stack = (*stack)->next;
-    free(tmp);
-  }
-  *stack = NULL;
-}
+//   IC** loc = (IC**) (lam)->s[1];
+//   *loc = (*app)->s[1];
+//   (*app) = lam->s[0];
+// }
 
-int full_search = 0;
-SearchStack* redex_seen = NULL; 
-
-int search_redex(Node* term, Runtime* runtime){
-
-  if (fuel <= runtime->steps) return 0;
-  if (term == NULL || term->s0 == NULL) return 0;
-  Node* other = term->s0;
-
-  if (handle_redex(term, other, runtime)){
-    search_redex(term, runtime);
-    return 1;
-  }
-
-  switch (term->tag){
-    case Tag_Lam:
-      search_redex(other, runtime);
-      return 0;
-    case Tag_Sup:
-      search_redex(term->s0, runtime);
-      search_redex(term->s1, runtime);
-      return 0;
-    case Tag_Dup: case Tag_Dup2:
-
-      if (full_search){
-        if (stack_has(redex_seen, term->s0)) {return 0;}
-        stack_push(&redex_seen, term->s0);
-      }
-      if (search_redex(other, runtime)) return search_redex(term, runtime);
-      return 0;
-    case Tag_App:
-      if (search_redex(other, runtime)) return search_redex(term, runtime);
-      if (full_search){search_redex(term->s1, runtime);}
-      return 0;
-    case Tag_Var: case Tag_Null: case Tag_Prim: return 0;
-    case Tag_Freed: error("Node is freed"); exit(1);
-  }
-}
 
 int run(int Nsteps, Runtime* runtime){
-  fuel = Nsteps;
+  // runtime->root = c1(runtime);
 
-  full_search = 0;
-  search_redex(&(runtime->nodes[0]), runtime);
 
-  full_search = 1;
-  redex_seen = NULL;
-  search_redex(&(runtime->nodes[0]), runtime);
-  stack_free(&redex_seen);
-  fflush(stdout);
-  return runtime->steps;
-}
 
-int get_node_count(Runtime* runtime){
-  return runtime->node_ctr;
-}
+  runtime->root = ID(runtime);
 
-Runtime* new_runtime(){
-  return calloc(1, sizeof(Runtime));
+  return 1;
 }
