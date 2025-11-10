@@ -14,9 +14,14 @@ if __name__ == "__main__":
 
   from tinycombinator.lib import church
 
-  hide_dups.set(True)
+  # hide_dups.set(True)
 
-  print(scott.nat(2))
+  # print(scott.nat(2))
+
+
+  t = Term(lambda x: 1)
+
+  print(t)
 
 
 

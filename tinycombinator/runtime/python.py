@@ -25,9 +25,6 @@ def commute(dup: Node, lam: Node)->Node:
   new = [[Node(dup.tag, dup.label), Node(d2tag, dup.label)], [Node(lam.tag, lam.label), Node(l2tag, lam.label)]]
 
 
-  ab = [0,1,0,1]
-  aa = [0,0,1,1]
-
   wire(Port(new[0][0], 0), lam.con[2])
   wire(Port(new[0][1], 0), lam.con[1])
   wire(Port(new[1][0], 0), dup.con[2])
