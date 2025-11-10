@@ -2,18 +2,12 @@ from typing import Any
 import unittest
 
 from tinycombinator.helpers import Context, Env, hide_dups, print_tree
+
 from tinycombinator.lib import church, scott
-from tinycombinator.nodes import Port
+from tinycombinator.nodes import Node, Port, Tag, wire
 from tinycombinator.term import Term, ID, T, F, label_reset, run, step
 
-
-
-
-
-
 basics = [ID, T, F, church.Nat(2), ID()(ID), ID().sup(ID())]
-
-
 
 class ConstructionRepresentation(unittest.TestCase):
 
@@ -47,8 +41,8 @@ class ConstructionRepresentation(unittest.TestCase):
     c2 = Term(church.Nat(2))
     c2c = c2.clone()
     c2string = str(c2)
-    c2.srcs[0].port.node.con[1] = None
-    assert str(c2) != c2string
+    wire(c2.srcs[0].port.other(), Port(Node(Tag.Null)))
+    self.assertNotEqual(str(c2), c2string)
     assert str(c2c) == c2string
   
   def test_step(self):
@@ -81,13 +75,12 @@ class ConstructionRepresentation(unittest.TestCase):
       scott.nat(3),
       hide_dups = True
     )
+
     # self._assert_run(
     #   scott.dec()(scott.nat(2)),
     #   scott.nat(1),
     #   hide_dups = True
     # )
-
-
 
 if __name__ == "__main__":
   unittest.main()

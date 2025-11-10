@@ -126,7 +126,7 @@ def decompile(term:Term)->str:
       case Tag.App: return ["("] + idn(_tree(node.con[MAIN], stack) + _tree(node.con[AUX1], stack), ")")
       case Tag.Lam:
         if term.side == AUX1: return [varname(node)]
-        return [f"λ" + (varname(node) if node.con[AUX1] else "" )] + idn(_tree(node.con[AUX2], stack))
+        return [f"λ" + (varname(node) if node.con[AUX1].node.tag != Tag.ERA else "" )] + idn(_tree(node.con[AUX2], stack))
       case Tag.Dup:
         if hide_dups: return _tree(node.con[MAIN], [*stack, (term.node.label, term.side)])
         if term in ctx: return [varname(term)]
@@ -178,10 +178,11 @@ def parse_fun(fn: Callable)->Node:
           wire(prev, ds[0].port)
           wire(cur, ds[1].port)
           prev = Port(ds[0].port.node, MAIN)
+
+  if lam.con[AUX1] is None: wire(Port(lam, AUX1), Port(Node(Tag.ERA)))
   return Port(lam)
 
 def ID(): return Term(lambda x: x)
-
 def T(): return Term(lambda x, y: x)
 def F(): return Term(lambda x, y: y)
 
