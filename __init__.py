@@ -4,7 +4,7 @@ tinycombinator - A minimal Python and C implementation of interaction calculus r
 
 __version__ = "0.1.0"
 
-from tinycombinator.ic import Node
+from tinycombinator.nodes import Node
 # from tinycombinator.main import execute
 
 __all__ = ["Node"]

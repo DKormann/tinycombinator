@@ -1,50 +1,53 @@
 from typing import Any
 import unittest
 
-from tinycombinator.helpers import print_tree
-from tinycombinator.ic import AUX1, AUX2, Node, MAIN, Tag, parse_fun
+from tinycombinator.helpers import Context, Env, hide_dups, print_tree
+from tinycombinator.lib.terms import churchNat
+from tinycombinator.nodes import Port
+from tinycombinator.term import Term, ID, T, F, label_reset, step
 
-
-
-
-
-
+basics = [ID, T, F, churchNat(2), ID()(ID)]
 class ConstructionRepresentation(unittest.TestCase):
 
-  def _assert_fmt(self, term:Any, expected:str):
-    with print_tree(False):
-      self.assertEqual(str(Node(term)), expected)
-
-  def test_id(self):
-
-    self._assert_fmt(lambda x: x, "λa a")
-    self._assert_fmt(lambda x, y: x, "λa λb a")
-    self._assert_fmt(lambda x, y, z: x, "λa λb λc a")
+  def _assert_fmt(self, term:Any, expected:str, **envs):
+    with print_tree(False), Context(**envs):
+      if isinstance(expected, Term): expected = str(expected)
+      self.assertEqual(str(Term(term)), expected)
   
-  def test_app(self):
-    a = Node(lambda x: x)
-    b = Node(lambda y: y)
-    self._assert_fmt(a(b), "( λa a λb b)")
-  
-  def test_sup(self):
-    a = Node.sup(Node(lambda x: x), Node(lambda y: y), 0)
-    self._assert_fmt(a, "&0{ λa a λb b}")
-  
-  def test_prim(self):
-    a = Node(1)
-    self._assert_fmt(a, "1")
-  
-  def test_add(self):
-    a = Node(1) + Node(2)
-    # self._assert_fmt(a, "( 1 + 2)")
+  def test_fmt(self):
 
-    # print(a.tag, a.con[MAIN].target
-    # print(a.tag, a.con[MAIN].target is a)
+    self._assert_fmt(ID, "λa a")
+    self._assert_fmt(ID(), "λa a")
+    self._assert_fmt(T, "λa λ a")
+    self._assert_fmt(T(), "λa λ a")
+    self._assert_fmt(F, "λ λa a")
 
-    # raise Exception("stop")
+    self._assert_fmt(churchNat(0), "λ λa a")
+    self._assert_fmt(churchNat(1), "λa λb ( a b)")
+    self._assert_fmt(churchNat(2), "λa λb ( a ( a b))", hide_dups = True)
+    label_reset()
+    self._assert_fmt(churchNat(2), "λa λb ( c where &72{c, d} = a ( d b))", hide_dups = False)
 
-    self._assert_fmt(a, "(+ 1 2)")
+  def test_clone(self):
+    for term in basics:
+      t = Term(term)
+      self.assertEqual(str(t), str(t.clone()))
+
+    c2 = Term(churchNat(2))
+    c2c = c2.clone()
+    c2string = str(c2)
+    c2.srcs[0].port.target.con[1] = None
+    assert str(c2) != c2string
+    assert str(c2c) == c2string
   
+  def test_step(self):
+    t = ID()(ID())
+    res = step(t)
+    self._assert_fmt(res, ID())
+
+
+
+
 
 
 

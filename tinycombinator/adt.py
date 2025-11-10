@@ -1,5 +1,5 @@
 from functools import cached_property
-from tinycombinator.ic import Node, Tag
+from tinycombinator.nodes import Node, Tag
 from typing import Dict
 from dataclasses import dataclass
 

@@ -5,7 +5,7 @@ from tinycombinator.lib.terms import circular, cnat
 
 from tinycombinator.lib import scott
 from tinycombinator.main import get_lib, get_node_count_c, load_term_c, run_term_c
-from tinycombinator.ic import Node, reset_labels
+from tinycombinator.nodes import Node, reset_labels
 from tinycombinator.helpers import DEBUG, hide_dups, print_tree
 
 

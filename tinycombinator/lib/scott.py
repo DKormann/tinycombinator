@@ -6,7 +6,7 @@ from operator import truediv
 from tinycombinator.lib.terms import F, T, cnat
 from tinycombinator.main import execute
 
-from tinycombinator.ic import  Node, Tag, app, hide_dups, lam, lamvar, move, null, parse_lam, print_tree, sup, x, dup
+from tinycombinator.nodes import  Node, Tag, app, hide_dups, lam, lamvar, move, null, parse_lam, print_tree, sup, x, dup
 
 
 
