@@ -2,11 +2,16 @@ from typing import Any
 import unittest
 
 from tinycombinator.helpers import Context, Env, hide_dups, print_tree
-from tinycombinator.lib import church
+from tinycombinator.lib import church, scott
 from tinycombinator.nodes import Port
 from tinycombinator.term import Term, ID, T, F, label_reset, run, step
 
-basics = [ID, T, F, church.Nat(2), ID()(ID)]
+
+
+
+
+
+basics = [ID, T, F, church.Nat(2), ID()(ID), ID().sup(ID())]
 
 
 
@@ -42,7 +47,7 @@ class ConstructionRepresentation(unittest.TestCase):
     c2 = Term(church.Nat(2))
     c2c = c2.clone()
     c2string = str(c2)
-    c2.srcs[0].port.target.con[1] = None
+    c2.srcs[0].port.node.con[1] = None
     assert str(c2) != c2string
     assert str(c2c) == c2string
   
@@ -56,7 +61,7 @@ class ConstructionRepresentation(unittest.TestCase):
     res = run(t)
     self._assert_fmt(res, ID())
 
-    self._assert_run(Term.sup(1,2,0)(3), '&0{ ( <1> <3>) ( <2> <3>)}')
+    self._assert_run(Term.sup(1,2,0)(3), '&0{ ( 1 3) ( 2 3)}')
 
     self._assert_run(
       church.Nat(2)(church.Nat(2)),
@@ -70,19 +75,17 @@ class ConstructionRepresentation(unittest.TestCase):
       hide_dups = True
     )
 
-  
-  
-
-  
-
-
-
-
-
-  
-
-
-
+  def test_scott(self):
+    self._assert_run(
+      scott.inc()(scott.nat(2)),
+      scott.nat(3),
+      hide_dups = True
+    )
+    # self._assert_run(
+    #   scott.dec()(scott.nat(2)),
+    #   scott.nat(1),
+    #   hide_dups = True
+    # )
 
 
 

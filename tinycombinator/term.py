@@ -43,7 +43,6 @@ class Term:
     wire(Port(res, sides[0]), self.port)
     wire(Port(res, sides[1]), other.port)
     return Term(Port(res, sides[2]))
-  
 
   def sup(self, other: "Term", label: int = None): return Term.binary(self, other, Tag.Sup, label  = fresh_label() if label is None else label)
 
@@ -58,19 +57,18 @@ class Term:
   def srcs(self)->List["Term"]:
     tars = []
 
-    match self.port.target.tag:
+    match self.port.node.tag:
       case Tag.App: tars = [MAIN, AUX1]
       case Tag.Lam: tars = [AUX2]
       case Tag.Null | Tag.Prim: return []
       case Tag.Dup: tars = [MAIN]
       case Tag.Sup: tars = [AUX1, AUX2]
 
-    return [Term(self.port.target.con[i]) for i in tars]
-    
+    return [Term(self.port.node.con[i]) for i in tars]
 
   @staticmethod
   def binapp(op: MathOps):
-    def fn(self, other: "Port"): return Port(Tag.Prim, value = op)(self)(other)
+    def fn(self, other: "Port"): return Term(Node(Tag.Prim, value = op))(self)(other)
     return fn
 
   __add__ = binapp(MathOps.Add)
@@ -84,15 +82,14 @@ class Term:
   __lt__ = binapp(MathOps.Lt)
   __gt__ = binapp(MathOps.Gt)
 
+  def __pos__(self): return Term(Node(Tag.Prim, value = MathOps.Add))(self)
   def __hash__(self): raise NotImplementedError("__hash__ is not implemented")
 
 
   def clone(self)->"Term":
     """deep copy of the term"""
-    return Term(Port(self.port.target.clone(), self.port.side))
-        
+    return Term(Port(self.port.node.clone(), self.port.side))
 
-    
 
 def fresh_label()->int:
   global lab_ctr
@@ -118,11 +115,11 @@ def decompile(term:Term)->str:
     return [ws + ln for ln in lns]
   def _tree(term:Port | None, stack:list[tuple[int, int]])->list[str]:
 
-    if not term.is_term(): return [f"<CANT TREE: {term.target.tag}, {term.side}>"]
+    if not term.is_term(): return [f"<CANT TREE: {term.node.tag}, {term.side}>"]
 
     if term is None: return ["NONE"]
     if term in ctx: return [varname(term)]
-    node = term.target
+    node = term.node
     if node in ctx: return [varname(node)]
 
     match node.tag:
@@ -131,9 +128,9 @@ def decompile(term:Term)->str:
         if term.side == AUX1: return [varname(node)]
         return [f"λ" + (varname(node) if node.con[AUX1] else "" )] + idn(_tree(node.con[AUX2], stack))
       case Tag.Dup:
-        if hide_dups: return _tree(node.con[MAIN], [*stack, (term.target.label, term.side)])
+        if hide_dups: return _tree(node.con[MAIN], [*stack, (term.node.label, term.side)])
         if term in ctx: return [varname(term)]
-        names = [varname(Port(term.target, AUX1)), varname(Port(term.target, AUX2))]
+        names = [varname(Port(term.node, AUX1)), varname(Port(term.node, AUX2))]
         return [f"{names[term.side-1]} where &{node.label}{{{names[0]}, {names[1]}}} ="] + idn(_tree(node.con[MAIN], stack))
 
       case Tag.Sup:
@@ -141,13 +138,11 @@ def decompile(term:Term)->str:
           if label == node.label: return _tree(node.con[side], [*stack[:i], *stack[i+1:]])
         return [f"&{node.label}{{"] + idn(_tree(node.con[AUX1], stack) + _tree(node.con[AUX2], stack), "}")
       case Tag.Prim:
-        if isinstance(node.value, MathOps): return [str(node.value.name)]
-        return [f"<{node.value}>"]
+        if isinstance(node.value, MathOps): return [str(node.value)]
+        return [f"{node.value}"]
       case Tag.Null: return ["NULL"]
       case _: return ["IC:"+str(node.tag)]
   return ("\n" if print_tree else " ").join(_tree(term.port, [])).strip()
-
-
 
 def curried(fun: Callable, argc: int = None)->Callable:
   if isinstance(fun, Node):return fun
@@ -172,8 +167,8 @@ def parse_fun(fn: Callable)->Node:
 
   for node in lam.walk():
     for i,p in enumerate(node.con):
-      if p is None or (p.target is lam and p.side == AUX1): continue
-      if p.target is x.target:
+      if p is None or (p.node is lam and p.side == AUX1): continue
+      if p.node is x.node:
         cur = Port(node, i)
         if prev is None:
           prev = cur
@@ -182,7 +177,7 @@ def parse_fun(fn: Callable)->Node:
           ds = bindr.dups()
           wire(prev, ds[0].port)
           wire(cur, ds[1].port)
-          prev = Port(ds[0].port.target, MAIN)
+          prev = Port(ds[0].port.node, MAIN)
   return Port(lam)
 
 def ID(): return Term(lambda x: x)

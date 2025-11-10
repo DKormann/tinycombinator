@@ -15,6 +15,8 @@ def anihilate(app: Node, lam: Node)->Node:
 
 def commute(dup: Node, lam: Node)->Node:
 
+  assert lam.con[AUX1] is not None and lam.con[AUX2] is not None, f"lam {lam} has no aux1 or aux2: {lam.con}"
+
   debug(f"commute {dup} {lam}")
   tags = (dup.tag, lam.tag)
   d2tag = Tag.Sup if tags == (Tag.Dup, Tag.Lam) else dup.tag
@@ -22,12 +24,23 @@ def commute(dup: Node, lam: Node)->Node:
 
   new = [[Node(dup.tag, dup.label), Node(d2tag, dup.label)], [Node(lam.tag, lam.label), Node(l2tag, lam.label)]]
 
-  for i in range(4): wire(Port(new[i//2][i%2], MAIN), [dup, lam][1-i//2].con[2-i%2])
-  for i in range(4): wire(Port(new[1][i//2], AUX1+i%2), Port(new[0][1-i%2], AUX2-i//2))
+
+  ab = [0,1,0,1]
+  aa = [0,0,1,1]
+
+  wire(Port(new[0][0], 0), lam.con[2])
+  wire(Port(new[0][1], 0), lam.con[1])
+  wire(Port(new[1][0], 0), dup.con[2])
+  wire(Port(new[1][1], 0), dup.con[1])
+
+  wire(Port(new[1][0], 1), Port(new[0][1], 2))
+  wire(Port(new[1][0], 2), Port(new[0][0], 2))
+  wire(Port(new[1][1], 1), Port(new[0][1], 1))
+  wire(Port(new[1][1], 2), Port(new[0][0], 1))
 
 def redex(node: Node):
   if node.con[MAIN].side != MAIN: return False
-  other = node.con[0].target
+  other = node.con[0].node
   match node.tag, other.tag:
     case (Tag.Null, Tag.Dup) | (Tag.Prim, Tag.Dup): erase(node, other)
     case (Tag.App, Tag.Lam): anihilate(node, other)
