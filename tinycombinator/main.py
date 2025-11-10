@@ -1,36 +1,28 @@
 
 
-# from tinycombinator.term import ID, Term, step
 
 
-# if __name__ == "__main__":
+from tinycombinator.helpers import hide_dups
+
+from tinycombinator.term import ID, T, Term, parse_fun, run
 
 
-#   t = Term(ID)(ID)
 
-#   print(t)
-#   print(step(t))
+class Node:
 
-
-#   t = Term.sup(2, 3, 0)
-
-#   t = t(2)
-#   print(t)
-
-#   t = step(t)
-#   print(t)
-
-#   t = step(t)
-
-
-#   print(t)
-
-
-from tinycombinator.term import ID, T, Term, parse_fun
+  def IF (c, t, f):
+    c(t)(f )
 
 
 if __name__ == "__main__":
-  t = Term(parse_fun(lambda x, y: y))
 
-  print(t)
+
+  from tinycombinator.lib import church
+
+  hide_dups.set(True)
+  print(Term(church.Suc))
+
+
+
+
 

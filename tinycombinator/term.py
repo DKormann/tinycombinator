@@ -1,7 +1,7 @@
 from typing import Callable, List, Tuple
 from tinycombinator.helpers import DEBUG, hide_dups, print_tree, debug
 from tinycombinator.nodes import Port, Tag, Node, wire, AUX1, AUX2, MAIN, MathOps
-from tinycombinator.runtime.python import step as step_node
+from tinycombinator.runtime.python import run as run_node
 
 
 class Term:
@@ -29,7 +29,7 @@ class Term:
   
     return super().__new__(cls)
 
-  def __repr__(self)->str: return tree(self)
+  def __repr__(self)->str: return decompile(self)
 
   def dups(self, label: int = None):
     if label is None: label = fresh_label()
@@ -47,7 +47,11 @@ class Term:
 
   def sup(self, other: "Term", label: int = None): return Term.binary(self, other, Tag.Sup, label  = fresh_label() if label is None else label)
 
-  def __call__(self, other: "Port"): return self.binary(other, Tag.App, (MAIN, AUX1, AUX2))
+  def __call__(self, *args: "Term"):
+    res = self
+    for arg in args:
+      res = Term.binary(res, arg, Tag.App, (MAIN, AUX1, AUX2))
+    return res
   
 
   @property
@@ -102,43 +106,46 @@ def label_reset():
 label_reset()
   
 
-def tree(term:Term)->str:
+def decompile(term:Term)->str:
   ws = "  " if print_tree else ""
   ctx = {}
   def varname(node:Node | None):
     if node is None: return ""
-    name = chr(len(ctx) % 26 + 97) + ("" if len(ctx) < 26 else chr(len(ctx) // 26 + 97))
-    return ctx.setdefault(node, name)
+    return ctx.setdefault(node, chr(len(ctx) % 26 + 97) + ("" if len(ctx) < 26 else chr(len(ctx) // 26 + 97)))
   def idn(lns:list[str], end = "")->list[str]:
     lns = lns[:-1] + [lns[-1] + end]
     if sum(len(ln) for ln in lns) <= 20: return [ws + " ".join(map(str.strip, lns))]
     return [ws + ln for ln in lns]
-  def _tree(term:Port | None)->list[str]:
+  def _tree(term:Port | None, stack:list[tuple[int, int]])->list[str]:
 
     if not term.is_term(): return [f"<CANT TREE: {term.target.tag}, {term.side}>"]
 
     if term is None: return ["NONE"]
+    if term in ctx: return [varname(term)]
     node = term.target
     if node in ctx: return [varname(node)]
 
     match node.tag:
-      case Tag.App: return ["("] + idn(_tree(node.con[MAIN]) + _tree(node.con[AUX1]), ")")
+      case Tag.App: return ["("] + idn(_tree(node.con[MAIN], stack) + _tree(node.con[AUX1], stack), ")")
       case Tag.Lam:
         if term.side == AUX1: return [varname(node)]
-        return [f"λ" + (varname(node) if node.con[AUX1] else "" )] + idn(_tree(node.con[AUX2]))
+        return [f"λ" + (varname(node) if node.con[AUX1] else "" )] + idn(_tree(node.con[AUX2], stack))
       case Tag.Dup:
-        if hide_dups: return _tree(node.con[MAIN])
+        if hide_dups: return _tree(node.con[MAIN], [*stack, (term.target.label, term.side)])
         if term in ctx: return [varname(term)]
         names = [varname(Port(term.target, AUX1)), varname(Port(term.target, AUX2))]
-        return [f"{names[term.side-1]} where &{node.label}{{{names[0]}, {names[1]}}} ="] + idn(_tree(node.con[MAIN]))
+        return [f"{names[term.side-1]} where &{node.label}{{{names[0]}, {names[1]}}} ="] + idn(_tree(node.con[MAIN], stack))
 
-      case Tag.Sup: return [f"&{node.label}{{"] + idn(_tree(node.con[AUX1]) + _tree(node.con[AUX2]), "}")
+      case Tag.Sup:
+        for i, (label, side) in enumerate(stack):
+          if label == node.label: return _tree(node.con[side], [*stack[:i], *stack[i+1:]])
+        return [f"&{node.label}{{"] + idn(_tree(node.con[AUX1], stack) + _tree(node.con[AUX2], stack), "}")
       case Tag.Prim:
         if isinstance(node.value, MathOps): return [str(node.value.name)]
         return [f"<{node.value}>"]
       case Tag.Null: return ["NULL"]
       case _: return ["IC:"+str(node.tag)]
-  return ("\n" if print_tree else " ").join(_tree(term.port)).strip()
+  return ("\n" if print_tree else " ").join(_tree(term.port, [])).strip()
 
 
 
@@ -183,9 +190,10 @@ def ID(): return Term(lambda x: x)
 def T(): return Term(lambda x, y: x)
 def F(): return Term(lambda x, y: y)
 
-def step(term: Term):
+def step(term: Term): return run(term, 1)
 
+def run(term: Term, steps: int = None):
   root = Node(Tag.ROOT)
   wire(Port(root, MAIN), term.port)
-  step_node(root)
+  run_node(root, steps)
   return Term(root.con[MAIN])

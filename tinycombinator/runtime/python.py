@@ -38,9 +38,15 @@ def redex(node: Node):
     case _: return False
   return True
 
-def step(term: Node):
+def step(node: Node):
+  for port in node.walk():
+    if port and redex(port): return True
+  
 
-  for port in term.walk():
-    if port and redex(port): break
+def run(node: Node, steps: int = None):
+  if steps is None: steps = int(1e9)
+  for _ in range(steps):
+    if not step(node): break
+
   
 
