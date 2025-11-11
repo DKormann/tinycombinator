@@ -18,6 +18,18 @@ class Tag(Enum):
   def __repr__(self)->str: return self.name
 
 
+  def negative_polarity(self, side: int)->int:
+    match self:
+      case Tag.App: return side == AUX2
+      case Tag.Lam: return side != AUX2
+      case Tag.Sup: return side == MAIN
+      case Tag.Dup: return side != MAIN
+      case Tag.ROOT | Tag.ERA: return False
+      case Tag.Prim | Tag.Null: return True
+      case _: raise ValueError(f"unknown tag: {self.node.tag}")
+
+
+
 class MathOps(Enum):
   Add, Sub, Mul, Div, Mod, Pow, Eq, Ne, Lt, Gt = range(10)
   __str__ = __repr__ = lambda self: ["+", "-", "*", "/", "%", "^", "==", "!=", "<", ">"][self.value]
@@ -36,7 +48,7 @@ class Node:
   def __post_init__(self): assert isinstance(self.tag, Tag)
 
   def walk(self):
-    seen = set()
+    seen = {self}
     todo = [self]
     while todo:
       term = todo.pop()
@@ -66,21 +78,15 @@ class Port:
   def other(self): return self.node.con[self.side]
   
 
-  def is_term(self):
+  def is_term(self): return self.node.tag.negative_polarity(self.side)
 
-    match self.node.tag:
-      case Tag.App: return self.side == AUX2
-      case Tag.Lam: return self.side != AUX2
-      case Tag.Sup: return self.side == MAIN
-      case Tag.Dup: return self.side != MAIN
-      case Tag.Prim | Tag.Null: return True
-    raise ValueError(f"unknown tag: {self.node.tag}")
-  
   def __eq__(self, other: "Port"): return self.node is other.node and self.side == other.side
   def __hash__(self): return hash((id(self.node), self.side))
 
 
-def wire(ic: "Port", other: "Port"):
+def wire(ic: Port, other: Port):
+  ic, other = (Port(*p) if isinstance(p, tuple) else p for p in (ic, other))
+  assert ic.is_term() != other.is_term(), f"cannot wire {ic} and {other}"
   ic.node.con[ic.side] = other
   other.node.con[other.side] = ic
 

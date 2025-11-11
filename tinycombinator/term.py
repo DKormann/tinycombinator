@@ -6,8 +6,8 @@ from tinycombinator.runtime.python import run as run_node
 
 class Term:
   def __init__(self, x: Port | Node | int | Callable, side: int = None):
+    if x is None: x = Node(Tag.Null)
     if hasattr(self, "port"): return
-
     if isinstance(x, Port): pass
     elif isinstance(x, int): x = Port(Node(Tag.Prim, value = x))
     elif isinstance(x, Node): x = Port(x)
@@ -65,6 +65,19 @@ class Term:
       case Tag.Sup: tars = [AUX1, AUX2]
 
     return [Term(self.port.node.con[i]) for i in tars]
+  
+
+  def named_field(self, tag, pos): return self.srcs[pos] if self.port.node.tag == tag else None
+
+  def __getattr__(self, name: str)->"Term":
+    if name == "body": return self.named_field(Tag.Lam, 0)
+    if name == "fn": return self.named_field(Tag.App, 0)
+    if name == "arg": return self.named_field(Tag.App, 1)
+
+
+    return super().__getattr__(name)
+
+
 
   @staticmethod
   def binapp(op: MathOps):
@@ -158,6 +171,7 @@ def parse_fun(fn: Callable)->Node:
   res = fn(Term(x))
   if isinstance(res, Term): res = res.port
   if callable(res): res = parse_fun(res)
+  res = Term(res).port
   assert isinstance(res, Port), f"expected Port, got {type(res)}"
   lam = Node(Tag.Lam)
   wire(Port(lam, AUX2), res)

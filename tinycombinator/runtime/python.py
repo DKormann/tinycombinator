@@ -39,9 +39,9 @@ def redex(node: Node):
   if node.con[MAIN].side != MAIN: return False
   other = node.con[0].node
   match node.tag, other.tag:
-    case (Tag.Null, Tag.Dup) | (Tag.Prim, Tag.Dup): erase(node, other)
-    case (Tag.App, Tag.Lam): anihilate(node, other)
+    case (Tag.Null, Tag.Dup) | (Tag.Prim, Tag.Dup) | (Tag.ERA, Tag.Sup): erase(node, other)
     case (Tag.Dup, Tag.Lam) | (Tag.App, Tag.Sup): commute(node, other)
+    case (Tag.App, Tag.Lam): anihilate(node, other)
     case (Tag.Dup, Tag.Sup):
       if node.label == other.label: anihilate(node, other)
       else: commute(node, other)
