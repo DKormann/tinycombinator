@@ -19,9 +19,9 @@ if __name__ == "__main__":
   # print(scott.nat(2))
 
 
-  t = Term(lambda x: 1)
+  # t = Term(lambda x: 1)
 
-  print(t)
+  # print(t)
 
 
 
