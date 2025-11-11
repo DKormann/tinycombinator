@@ -16,7 +16,7 @@ class Term:
       else: x = parse_fun(x)
     else: raise ValueError(f"invalid type: {type(x)}")
     if not x.is_term(): raise ValueError(f"not a term: {x}")
-    self.port = x
+    self.port : Port = x
   
   def __new__(cls, x, *args, **kwargs):
 
@@ -37,7 +37,7 @@ class Term:
     wire(Port(d, MAIN), self.port)
     return Term(Port(d, AUX1)), Term(Port(d, AUX2))
 
-  def binary(self, other: "Term", tag: Tag, sides: Tuple[int, int] = (AUX1, AUX2, MAIN), label: int = None):
+  def binary(self, other: "Term", tag: Tag, sides: Tuple[int, int] = (AUX1, AUX2, MAIN), label: int = 0):
     self, other = Term(self), Term(other)
     res = Node(tag, label = label)
     wire(Port(res, sides[0]), self.port)
@@ -73,6 +73,9 @@ class Term:
     if name == "body": return self.named_field(Tag.Lam, 0)
     if name == "fn": return self.named_field(Tag.App, 0)
     if name == "arg": return self.named_field(Tag.App, 1)
+    if name == "node": return self.port.node
+    if name == "side": return self.port.side
+    if name == "tag": return self.node.tag
 
 
     return super().__getattr__(name)
