@@ -105,6 +105,8 @@ void set_dup_aux(LOC loc, LOC a, int a_side, LOC b, int b_side, Runtime* runtime
 
 
 
+
+
 char* tag_fmt(Term* term){
   switch (term->tag){
     case App: return "App";

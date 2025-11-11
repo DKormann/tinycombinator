@@ -47,6 +47,9 @@ def get_lib():
     fun("get_port_target", [ctypes.c_int, ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
     fun("get_port_side", [ctypes.c_int, ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
 
+    fun("set_dup_aux", [ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_void_p], None)
+    
+
   return local.lib
 
 DEBUG.set(1)
@@ -59,7 +62,15 @@ def serialize_term(term:Term, lib:ctypes.CDLL):
   rt = lib.new_runtime()
   cache = {}
 
+  root = (Port(Node(Tag.ROOT), MAIN))
+
+
+  wire(root, term.port)
+
   for node in term.port.node.walk(): cache[node] = lib.new_term(node.tag.value, node.label, rt)
+
+  lib.set_root(cache[root.node], rt)
+
 
   for node in term.port.node.walk():
 
@@ -67,7 +78,7 @@ def serialize_term(term:Term, lib:ctypes.CDLL):
       try: return sides(port.node.tag, need_term).index(port.side)
       except ValueError: raise ValueError(f"illegal port: {port}, {need_term}")
 
-    def c_connect(node, side, target:Port, need_term: bool=True):
+    def c_connect(node:Node, side, target:Port, need_term: bool=True):
       lib.set_port(cache[node],side,cache[target.node],port_side_to_c(target, need_term),rt,)
 
     match node.tag:
@@ -84,9 +95,14 @@ def serialize_term(term:Term, lib:ctypes.CDLL):
       
       case Tag.Dup:
         c_connect(node, 0, node.con[MAIN])
-        raise RuntimeError("not implemented")
+        a,b = node.con[AUX1:AUX2+1]
+        lib.set_dup_aux(cache[node],
+        cache[a.node], port_side_to_c(a, False),
+        cache[b.node], port_side_to_c(b, False), rt)
+
       
       case Tag.Null | Tag.ERA: pass
+      case Tag.ROOT: c_connect(node, 0, node.con[MAIN])
 
       case _: raise ValueError(f"illegal node: {node}")
 
@@ -99,39 +115,63 @@ def deserialize_term(rt:ctypes.c_void_p, lib:ctypes.CDLL):
   root = lib.get_root(rt)
   cache = {}
 
-  def port_side_from_c(tag:Tag, cside:int, need_term:bool = True):
-    return sides(tag, need_term)[cside]
-
-  def go(loc:int):
+  def go(loc:int)->Node:
     if loc in cache: return cache[loc]
-    tag = Tag(lib.get_tag(loc, rt))
-    node = Node(tag, lib.get_label(loc, rt))
+
+    node = Node(Tag(lib.get_tag(loc, rt)), lib.get_label(loc, rt))
 
     cache[loc] = node
 
-    match tag:
-      case Tag.App:
-        pass
-      
-      case Tag.Lam:
-        vr = go(lib.get_port_target(loc, 0, rt))
-        side = port_side_from_c(vr.tag, lib.get_port_side(loc, 0, rt), False)
-        wire(Port(node, AUX1), Port(vr, side))
+    def connect(side:int, c_side:int):
+      tar = go(lib.get_port_target(loc, c_side, rt))
+      oside = sides(tar.tag, not node.tag.negative_polarity(side))[lib.get_port_side(loc, c_side, rt)]
+      wire((node, side), (tar, oside))
 
-        bod = go(lib.get_port_target(loc, 1, rt))
-        side = port_side_from_c(bod.tag, lib.get_port_side(loc, 1, rt), True)
-        wire(Port(node, AUX2), Port(bod,side))
+    match node.tag:
+      case Tag.ROOT:
+        connect( MAIN, 0)
+      case Tag.App:
+        connect(MAIN, 0)
+        connect(AUX1, 1)
+      case Tag.Sup | Tag.Lam:
+        connect(AUX1, 0)
+        connect(AUX2, 1)
+      case Tag.Dup:
+        connect(MAIN, 0)
+        """ you could get the other port from the aux ports but need to reverse xored data"""
 
     return node
 
   node = go(root)
 
-  return Term(Port(node, MAIN))
+  return Term(Port(node, MAIN).other())
+
+
+
+
+
+def round_trip(term:Term):
+  s = str(term)
+  r = serialize_term(term, lib)
+  d = deserialize_term(r, lib)
+  assert str(d) == s
+
 
 
 t = Term(lambda x, y: x)
-r = serialize_term(t, lib)
-d = deserialize_term(r, lib)
-print(d)
+t2 = Term(lambda x, y: y)
 
+
+round_trip(Term.sup(t, t2))
+
+t0 = Term(lambda x:x)
+
+round_trip(t0)
+
+ds = t0.dups()
+
+round_trip(Term(lambda x: ds[0](ds[1])))
+
+
+print("OK")
 
