@@ -6,7 +6,7 @@ typedef void* P;
 
 P self = NULL;
 
-typedef struct Node {
+typedef struct BST {
   P (*app) (P arg);
   P (*dup) (P dup);
   char* (*rep) ();

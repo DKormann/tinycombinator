@@ -60,7 +60,7 @@ class Node:
   
   def clone(self):
     cache = {node: Node(node.tag, node.label, node.value) for node in self.walk()}
-    for node in self.walk(): cache[node].con = [None if con is None else Port(cache[con.node], con.side) for con in node.con]
+    for node in self.walk(): cache[node].con = [None if con is None else Port(cache[con.node], con.number) for con in node.con]
     return cache[self]
 
   
@@ -73,21 +73,21 @@ class Port:
   def __post_init__(self): assert isinstance(self.node, Node)
 
   node: Node
-  side: int = 0
+  number: int = 0
 
-  def other(self): return self.node.con[self.side]
+  def other(self): return self.node.con[self.number]
   
 
-  def is_term(self): return self.node.tag.negative_polarity(self.side)
+  def is_term(self): return self.node.tag.negative_polarity(self.number)
 
-  def __eq__(self, other: "Port"): return self.node is other.node and self.side == other.side
-  def __hash__(self): return hash((id(self.node), self.side))
+  def __eq__(self, other: "Port"): return self.node is other.node and self.number == other.number
+  def __hash__(self): return hash((id(self.node), self.number))
 
 
 def wire(ic: Port, other: Port):
   ic, other = (Port(*p) if isinstance(p, tuple) else p for p in (ic, other))
   assert ic.is_term() != other.is_term(), f"cannot wire {ic} and {other}"
-  ic.node.con[ic.side] = other
-  other.node.con[other.side] = ic
+  ic.node.con[ic.number] = other
+  other.node.con[other.number] = ic
 
 

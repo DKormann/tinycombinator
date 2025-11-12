@@ -36,7 +36,7 @@ def commute(dup: Node, lam: Node)->Node:
   wire(Port(new[1][1], 2), Port(new[0][0], 1))
 
 def redex(node: Node):
-  if node.con[MAIN].side != MAIN: return False
+  if node.con[MAIN].number != MAIN: return False
   other = node.con[0].node
   match node.tag, other.tag:
     case (Tag.Null, Tag.Dup) | (Tag.Prim, Tag.Dup) | (Tag.ERA, Tag.Sup): erase(node, other)

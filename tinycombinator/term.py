@@ -74,7 +74,7 @@ class Term:
     if name == "fn": return self.named_field(Tag.App, 0)
     if name == "arg": return self.named_field(Tag.App, 1)
     if name == "node": return self.port.node
-    if name == "side": return self.port.side
+    if name == "side": return self.port.number
     if name == "tag": return self.node.tag
 
 
@@ -88,6 +88,7 @@ class Term:
     return fn
 
   __add__ = binapp(MathOps.Add)
+  __radd__ = __add__
   __sub__ = binapp(MathOps.Sub)
   __mul__ = binapp(MathOps.Mul)
   __div__ = binapp(MathOps.Div)
@@ -104,7 +105,7 @@ class Term:
 
   def clone(self)->"Term":
     """deep copy of the term"""
-    return Term(Port(self.port.node.clone(), self.port.side))
+    return Term(Port(self.port.node.clone(), self.port.number))
 
 
 def fresh_label()->int:
@@ -131,7 +132,7 @@ def decompile(term:Term)->str:
     return [ws + ln for ln in lns]
   def _tree(term:Port | None, stack:list[tuple[int, int]])->list[str]:
 
-    if not term.is_term(): return [f"<CANT TREE: {term.node.tag}, {term.side}>"]
+    if not term.is_term(): return [f"<CANT TREE: {term.node.tag}, {term.number}>"]
 
     if term is None: return ["NONE"]
     if term in ctx: return [varname(term)]
@@ -141,13 +142,13 @@ def decompile(term:Term)->str:
     match node.tag:
       case Tag.App: return ["("] + idn(_tree(node.con[MAIN], stack) + _tree(node.con[AUX1], stack), ")")
       case Tag.Lam:
-        if term.side == AUX1: return [varname(node)]
+        if term.number == AUX1: return [varname(node)]
         return [f"λ" + (varname(node) if node.con[AUX1].node.tag != Tag.ERA else "" )] + idn(_tree(node.con[AUX2], stack))
       case Tag.Dup:
-        if hide_dups: return _tree(node.con[MAIN], [*stack, (term.node.label, term.side)])
+        if hide_dups: return _tree(node.con[MAIN], [*stack, (term.node.label, term.number)])
         if term in ctx: return [varname(term)]
         names = [varname(Port(term.node, AUX1)), varname(Port(term.node, AUX2))]
-        return [f"{names[term.side-1]} where &{node.label}{{{names[0]}, {names[1]}}} ="] + idn(_tree(node.con[MAIN], stack))
+        return [f"{names[term.number-1]} where &{node.label}{{{names[0]}, {names[1]}}} ="] + idn(_tree(node.con[MAIN], stack))
 
       case Tag.Sup:
         for i, (label, side) in enumerate(stack):
@@ -184,7 +185,7 @@ def parse_fun(fn: Callable)->Node:
 
   for node in lam.walk():
     for i,p in enumerate(node.con):
-      if p is None or (p.node is lam and p.side == AUX1): continue
+      if p is None or (p.node is lam and p.number == AUX1): continue
       if p.node is x.node:
         cur = Port(node, i)
         if prev is None:
