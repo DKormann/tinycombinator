@@ -3,10 +3,8 @@ import hashlib
 import os
 from pathlib import Path
 from re import I
-
 from tinycombinator.helpers import DEBUG, debug
-
-from tinycombinator.nodes import AUX1, AUX2, MAIN, Node, Port, Tag, wire
+from tinycombinator.nodes import AUX1, AUX2, MAIN, Node, Port, Tag, wire, MathOps
 from tinycombinator.term import Term
 
 
@@ -15,6 +13,37 @@ current_dir = Path(__file__).parent
 c_path = current_dir / "main.c"
 lib_path = current_dir / "tmp"
 os.makedirs(lib_path.parent, exist_ok=True)
+
+class CPort(ctypes.Structure):
+  loc: int
+  side: int
+  _fields_ = [("loc", ctypes.c_int32), ("side", ctypes.c_int32)]
+
+
+def encoded_ports(tag:Tag):
+  match tag:
+    case Tag.App: return [MAIN, AUX1]
+    case Tag.Lam | Tag.Dup | Tag.Sup: return [AUX1, AUX2]
+  return [MAIN]
+
+def term_ports(tag:Tag): return [i for i in range(3) if tag.negative_polarity(i)]
+def is_subst(tag:Tag, num:int): return (tag == Tag.Lam and num == AUX1) or (tag == Tag.Dup and num != MAIN)
+
+side = int
+num = int
+
+def to_c_port(port:Port) -> side:
+  tag = port.node.tag
+  num = port.number
+  otag = port.node.con[num].node.tag
+  onum = port.node.con[num].number
+  opts = (encoded_ports if is_subst(tag, num) else term_ports)(otag)
+  return opts.index(onum)
+
+def from_c_port(tag:Tag, num:int, otag:Tag, side:int) -> num: return (encoded_ports if is_subst(tag, num) else term_ports)(otag)[side]
+    
+
+
 
 
 def get_lib():
@@ -37,17 +66,18 @@ def get_lib():
       getattr(local.lib, name).restype = outs
 
     fun("new_runtime", [], ctypes.c_void_p)
-    fun("new_term", [ctypes.c_int, ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
+    fun("run", [ctypes.c_void_p], ctypes.c_int)
+    fun("new_node", [ctypes.c_int, ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
     fun("set_root", [ctypes.c_int, ctypes.c_void_p], None)
     fun("get_root", [ctypes.c_void_p], ctypes.c_int)
-    fun("set_port", [ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_void_p], None)
+    fun("set_port", [CPort, CPort, ctypes.c_void_p], None)
+    fun("get_port", [CPort, ctypes.c_void_p], CPort)
 
     fun("get_tag", [ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
     fun("get_label", [ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
-    fun("get_port_target", [ctypes.c_int, ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
-    fun("get_port_side", [ctypes.c_int, ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
+    fun("get_port_target", [CPort, ctypes.c_void_p], ctypes.c_int)
 
-    fun("set_dup_aux", [ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_void_p], None)
+    fun("set_dup_aux", [ctypes.c_int, CPort, CPort, ctypes.c_void_p], None)
     
 
   return local.lib
@@ -56,9 +86,9 @@ DEBUG.set(1)
 lib = get_lib()
 
 
-def sides(tag:Tag, need_term:bool): return [i for i in range(3) if tag.negative_polarity(i) == need_term]
+# def sides(tag:Tag, need_term:bool): return [i for i in range(3) if tag.negative_polarity(i) == need_term]
 
-def serialize_term(term:Term, lib:ctypes.CDLL):
+def serialize_term(term:Term, lib:ctypes.CDLL)->ctypes.c_void_p:
   rt = lib.new_runtime()
   cache = {}
 
@@ -67,42 +97,51 @@ def serialize_term(term:Term, lib:ctypes.CDLL):
 
   wire(root, term.port)
 
-  for node in term.port.node.walk(): cache[node] = lib.new_term(node.tag.value, node.label, rt)
+  for node in term.port.node.walk(): cache[node] = lib.new_node(node.tag.value, node.label, rt)
 
   lib.set_root(cache[root.node], rt)
 
 
   for node in term.port.node.walk():
 
-    def port_side_to_c(port:Port, need_term: bool)->int:
-      try: return sides(port.node.tag, need_term).index(port.side)
-      except ValueError: raise ValueError(f"illegal port: {port}, {need_term}")
-
-    def c_connect(node:Node, side, target:Port, need_term: bool=True):
-      lib.set_port(cache[node],side,cache[target.node],port_side_to_c(target, need_term),rt,)
+    def c_connect(node:Node, num:int):
+      print("c_connect:", node, num )
+      # p = to_c_port(target)
+      # dest = CPort(cache[node], num)
+      # src = CPort(cache[target.node], p)
+      # print("set_port:", dest.loc, dest.side, src.loc, src.side)
+      # lib.set_port(dest, src, rt)
 
     match node.tag:
 
       case Tag.App:
-        c_connect(node, 0, node.con[MAIN])
-        c_connect(node, 1, node.con[AUX1])
+        for i in range(2): c_connect(node, i, node.con[same_ports(node.tag)[i]])
       case Tag.Lam:
-        c_connect(node, 0, node.con[AUX1], False) # var creates a term
-        c_connect(node, 1, node.con[AUX2])
+        c_connect(node, 0)
+        c_connect(node, 1)
       case Tag.Sup:
-        c_connect(node, 0, node.con[AUX1])
-        c_connect(node, 1, node.con[AUX2])
+        c_connect(node, 0)
+        c_connect(node, 1)
       
       case Tag.Dup:
-        c_connect(node, 0, node.con[MAIN])
-        a,b = node.con[AUX1:AUX2+1]
-        lib.set_dup_aux(cache[node],
-        cache[a.node], port_side_to_c(a, False),
-        cache[b.node], port_side_to_c(b, False), rt)
-
+        c_connect(node, 0)
+        
+        ps = []
+        for i in range(2):
+          port = node.con[AUX1 + i]
+          ps.append(CPort(cache[port.node], to_c_port(port)))
+      
+        lib.set_dup_aux( cache[node], *ps, rt)
       
       case Tag.Null | Tag.ERA: pass
       case Tag.ROOT: c_connect(node, 0, node.con[MAIN])
+
+      case Tag.Prim:
+        if isinstance(node.value, int): 
+          lib.set_port(CPort(cache[node], 0), CPort(node.value, 0), rt)
+        elif isinstance(node.value, MathOps):
+          lib.set_port(CPort(cache[node], 0), CPort(node.value.value, 1), rt)
+
 
       case _: raise ValueError(f"illegal node: {node}")
 
@@ -122,23 +161,38 @@ def deserialize_term(rt:ctypes.c_void_p, lib:ctypes.CDLL):
 
     cache[loc] = node
 
-    def connect(side:int, c_side:int):
-      tar = go(lib.get_port_target(loc, c_side, rt))
-      oside = sides(tar.tag, not node.tag.negative_polarity(side))[lib.get_port_side(loc, c_side, rt)]
-      wire((node, side), (tar, oside))
+    def connect(side:int):
+      print(node.tag)
+
+      p = CPort(loc, side)
+      port : CPort = lib.get_port(p, rt)
+      print("connect:", loc, side, port.loc, port.side)
+      # tar = go(port.loc)
+      # print("tar:", tar)
+
+      # tarnum = from_c_port(tar.tag, port.side)
+      # pass
+
+      
 
     match node.tag:
       case Tag.ROOT:
-        connect( MAIN, 0)
+        connect(0)
       case Tag.App:
-        connect(MAIN, 0)
-        connect(AUX1, 1)
-      case Tag.Sup | Tag.Lam:
-        connect(AUX1, 0)
-        connect(AUX2, 1)
+        connect(0)
+        connect(1)
+      case Tag.Sup:
+        connect(0)
+        connect(1)
+      case Tag.Lam:
+        connect(1)
       case Tag.Dup:
-        connect(MAIN, 0)
+        connect(0)
         """ you could get the other port from the aux ports but need to reverse xored data"""
+      case Tag.Prim:
+        port = lib.get_port(CPort(loc, 0),rt)
+        if port.side: node.value = MathOps(port.loc)
+        else: node.value = port.loc
 
     return node
 
@@ -148,30 +202,35 @@ def deserialize_term(rt:ctypes.c_void_p, lib:ctypes.CDLL):
 
 
 
-
-
 def round_trip(term:Term):
   s = str(term)
+  print(f"SER {s}")
   r = serialize_term(term, lib)
   d = deserialize_term(r, lib)
-  assert str(d) == s
-
-
+  assert str(d) == s, f"expected {s}, got {str(d)}"
 
 t = Term(lambda x, y: x)
-t2 = Term(lambda x, y: y)
-
-
-round_trip(Term.sup(t, t2))
+t2 = Term(lambda x, y: x)
 
 t0 = Term(lambda x:x)
 
+round_trip(Term.sup(t, t2))
 round_trip(t0)
-
 ds = t0.dups()
-
 round_trip(Term(lambda x: ds[0](ds[1])))
 
-
+round_trip(Term(lambda x: x + 1))
 print("OK")
+
+
+a = t(t2)
+
+print(a)
+
+r = serialize_term(a, lib)
+res = lib.run(r)
+
+
+res = deserialize_term(r, lib)
+print(res)
 
