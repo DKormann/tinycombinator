@@ -1,12 +1,12 @@
-from tinycombinator.nodes import Node, Port, Tag, wire, AUX1, AUX2, MAIN, MathOps
+from tinycombinator.nodes import Node, Port, Tag, wire, PN, MathOps
 from tinycombinator.helpers import debug
 
 
 def erase(era:Node, app:Node)->Node:
   debug(f"erase {era} {app}")
   ers = [Node(era.tag, era.label, era.value) for i in range(2)]
-  wire(Port(ers[1], MAIN), app.con[AUX1])
-  wire(Port(ers[0], MAIN), app.con[AUX2]) # doesnt work?
+  wire(Port(ers[1], PN.MAIN), app.con[PN.AUX1])
+  wire(Port(ers[0], PN.MAIN), app.con[PN.AUX2]) # doesnt work?
 
 def anihilate(app: Node, lam: Node)->Node:
   debug(f"anihilate {app} {lam}")
@@ -15,7 +15,7 @@ def anihilate(app: Node, lam: Node)->Node:
 
 def commute(dup: Node, lam: Node)->Node:
 
-  assert lam.con[AUX1] is not None and lam.con[AUX2] is not None, f"lam {lam} has no aux1 or aux2: {lam.con}"
+  assert lam.con[PN.AUX1] is not None and lam.con[PN.AUX2] is not None, f"lam {lam} has no aux1 or aux2: {lam.con}"
 
   debug(f"commute {dup} {lam}")
   tags = (dup.tag, lam.tag)
@@ -36,7 +36,7 @@ def commute(dup: Node, lam: Node)->Node:
   wire(Port(new[1][1], 2), Port(new[0][0], 1))
 
 def redex(node: Node):
-  if node.con[MAIN].number != MAIN: return False
+  if node.con[PN.MAIN].number != PN.MAIN: return False
   other = node.con[0].node
   match node.tag, other.tag:
     case (Tag.Null, Tag.Dup) | (Tag.Prim, Tag.Dup) | (Tag.ERA, Tag.Sup): erase(node, other)

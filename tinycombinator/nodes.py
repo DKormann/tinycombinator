@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from functools import cached_property
+from math import isfinite
+from multiprocessing.spawn import prepare
 from typing import Any, Callable, Dict, List, Tuple, Union
 from tinycombinator.helpers import hide_dups, print_tree, debug
 
@@ -12,6 +14,15 @@ fully bidirectional connected graph
 
 """
 
+class PN(Enum):
+  """PORT number from 0-3"""
+  MAIN, AUX1, AUX2 = range(3)
+  def __index__(self): return self.value
+  def __repr__(self):return self.name
+
+
+
+
 class Tag(Enum):
   App, Lam, Dup, Sup, Null, Prim, ERA, ROOT = range(8)
   def __str__(self)->str: return self.name
@@ -20,10 +31,10 @@ class Tag(Enum):
 
   def negative_polarity(self, side: int)->int:
     match self:
-      case Tag.App: return side == AUX2
-      case Tag.Lam: return side != AUX2
-      case Tag.Sup: return side == MAIN
-      case Tag.Dup: return side != MAIN
+      case Tag.App: return side == PN.AUX2
+      case Tag.Lam: return side != PN.AUX2
+      case Tag.Sup: return side == PN.MAIN
+      case Tag.Dup: return side != PN.MAIN
       case Tag.ROOT | Tag.ERA: return False
       case Tag.Prim | Tag.Null: return True
       case _: raise ValueError(f"unknown tag: {self.node.tag}")
@@ -36,7 +47,6 @@ class MathOps(Enum):
 
 
 
-MAIN, AUX1, AUX2 = range(3)
 
 @dataclass
 class Node:
@@ -44,6 +54,9 @@ class Node:
   label: int = 0
   value: int = 0
   con: List["Port"] = field(default_factory=lambda: [None, None, None])
+
+  @property
+  def main(self): return self.con[0]
 
   def __post_init__(self): assert isinstance(self.tag, Tag)
 
@@ -70,15 +83,20 @@ class Node:
 @dataclass(frozen=True)
 class Port:
 
-  def __post_init__(self): assert isinstance(self.node, Node)
+  def __post_init__(self):
+    assert isinstance(self.number, PN)
+    assert isinstance(self.node, Node)
 
   node: Node
-  number: int = 0
+  number: PN = PN.MAIN
 
   def other(self): return self.node.con[self.number]
   
 
   def is_term(self): return self.node.tag.negative_polarity(self.number)
+
+  @property
+  def tag(self): return self.node.tag 
 
   def __eq__(self, other: "Port"): return self.node is other.node and self.number == other.number
   def __hash__(self): return hash((id(self.node), self.number))
@@ -87,7 +105,7 @@ class Port:
 def wire(ic: Port, other: Port):
   ic, other = (Port(*p) if isinstance(p, tuple) else p for p in (ic, other))
   assert ic.is_term() != other.is_term(), f"cannot wire {ic} and {other}"
-  ic.node.con[ic.number] = other
-  other.node.con[other.number] = ic
+  ic.node.con[ic.number.value] = other
+  other.node.con[other.number.value] = ic
 
 
