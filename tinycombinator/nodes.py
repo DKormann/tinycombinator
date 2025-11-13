@@ -29,12 +29,12 @@ class Tag(Enum):
   def __repr__(self)->str: return self.name
 
 
-  def negative_polarity(self, side: int)->int:
+  def negative_polarity(self, pn: PN)->int:
     match self:
-      case Tag.App: return side == PN.AUX2
-      case Tag.Lam: return side != PN.AUX2
-      case Tag.Sup: return side == PN.MAIN
-      case Tag.Dup: return side != PN.MAIN
+      case Tag.App: return pn == PN.AUX2
+      case Tag.Lam: return pn != PN.AUX2
+      case Tag.Sup: return pn == PN.MAIN
+      case Tag.Dup: return pn != PN.MAIN
       case Tag.ROOT | Tag.ERA: return False
       case Tag.Prim | Tag.Null: return True
       case _: raise ValueError(f"unknown tag: {self.node.tag}")

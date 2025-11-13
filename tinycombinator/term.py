@@ -5,7 +5,7 @@ from tinycombinator.runtime.python import run as run_node
 
 
 class Term:
-  def __init__(self, x: Port | Node | int | Callable, side: int = None):
+  def __init__(self, x: Port | Node | int | Callable):
     if x is None: x = Node(Tag.Null)
     if hasattr(self, "port"): return
     if isinstance(x, Port): pass

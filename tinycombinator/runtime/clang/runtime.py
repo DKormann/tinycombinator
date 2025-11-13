@@ -10,7 +10,6 @@ from tinycombinator.term import Term
 
 
 current_dir = Path(__file__).parent
-
 c_path = current_dir / "main.c"
 lib_path = current_dir / "tmp"
 os.makedirs(lib_path.parent, exist_ok=True)
@@ -29,23 +28,7 @@ def encoded_ports(tag:Tag):
     case Tag.ROOT | Tag.ERA: return [PN.MAIN]
   return []
 
-# def encoded_ports(tag:Tag):
-#   return [
-#     [PN.MAIN, PN.AUX1],
-#     *([[PN.AUX1, PN.AUX2]]*3),
-#     *([[PN.MAIN]]*2),
-#     [], []
-#   ][tag.value]
-
-
-
 def term_ports(tag:Tag): return [i for i in PN if tag.negative_polarity(i)]
-
-
-
-term_ports
-
-def is_subst(tag:Tag, num:int): return (tag == Tag.Lam and num == PN.AUX1) or (tag == Tag.Dup and num != PN.MAIN)
 
 side = int
 num = int
@@ -81,7 +64,7 @@ def get_lib():
     fun("get_port", [CPort, ctypes.c_void_p], CPort)
     fun("get_tag", [ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
     fun("get_label", [ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
-    fun("get_port_target", [CPort, ctypes.c_void_p], ctypes.c_int)
+    # fun("get_port_target", [CPort, ctypes.c_void_p], ctypes.c_int)
     fun("set_dup_aux", [ctypes.c_int, CPort, CPort, ctypes.c_void_p], None)
     
 
@@ -100,59 +83,40 @@ def serialize_term(term:Term, lib:ctypes.CDLL)->ctypes.c_void_p:
 
   for node in term.port.node.walk():
 
-
-
-    def to_c_side(port:Port) -> side:
-      o = port.other()
-
-      return (encoded_ports if is_subst(port.tag, port.number) else term_ports)(o.tag).index(o.number)
-
-
     def c_connect(side:int):
       portn = encoded_ports(node.tag)[side]
-      lib.set_port(
-        CPort(cache[node], side),
-        CPort(cache[node.con[portn].node], to_c_side(Port(node, portn))),
-        rt)
+      o = Port(node, portn).other()
+      cside = (encoded_ports if node.tag.negative_polarity(portn) else term_ports)(o.tag).index(o.number)
+      lib.set_port(CPort(cache[node], side), CPort(cache[o.node], cside), rt)
 
     match node.tag:
       case Tag.Dup:
         c_connect(0)
         ps = []
-        for i in range(1,3):
-          port = node.con[i]
-          ps.append(CPort(cache[port.node], to_c_side(port)))
+        for i in [PN.AUX1, PN.AUX2]:
+          o = node.con[i].other()
+          oside = encoded_ports(o.tag).index(o.number)
+          ps.append(CPort(cache[node], oside))
         lib.set_dup_aux( cache[node], *ps, rt)
-      case Tag.Prim:
-        if isinstance(node.value, int): lib.set_port(CPort(cache[node], 0), CPort(node.value, 0), rt)
-        elif isinstance(node.value, MathOps): lib.set_port(CPort(cache[node], 0), CPort(node.value.value, 1), rt)
+      case Tag.Prim: lib.set_port(CPort(cache[node], 0), CPort(node.value,0) if isinstance(node.value, int) else CPort(node.value.value,1), rt)
       case _:
-
-        for i in range(len(encoded_ports(node.tag))):
-          c_connect(i)
-
-
+        for i in range(len(encoded_ports(node.tag))): c_connect(i)
 
   return rt
 
 
 def deserialize_term(rt:ctypes.c_void_p, lib:ctypes.CDLL):
 
-  root = lib.get_root(rt)
   cache = {}
-
   def go(loc:int)->Node:
     if loc in cache: return cache[loc]
     node = Node(Tag(lib.get_tag(loc, rt)), lib.get_label(loc, rt))
     cache[loc] = node
 
-
-
     def connect(side:int, pn:PN):
-
       port: CPort = lib.get_port(CPort(loc, side), rt)
       o = go(port.loc)
-      c_port = (encoded_ports if is_subst(node.tag, pn) else term_ports)(o.tag)[port.side]
+      c_port = (encoded_ports if node.tag.negative_polarity(pn) else term_ports)(o.tag)[port.side]
       wire((node, pn),(o, c_port))
 
     match node.tag:
@@ -166,9 +130,7 @@ def deserialize_term(rt:ctypes.c_void_p, lib:ctypes.CDLL):
         for i in enumerate(encoded_ports(node.tag)): connect(*i)
     return node
 
-  node = go(root)
-
-  return Term(Port(node, PN.MAIN).other())
+  return Term(Port(go(lib.get_root(rt))).other())
 
 
 
