@@ -1,6 +1,6 @@
 from typing import Callable, List, Tuple
 from tinycombinator.helpers import DEBUG, hide_dups, print_tree, debug
-from tinycombinator.nodes import Port, Tag, Node, wire, AUX1, AUX2, MAIN, MathOps
+from tinycombinator.nodes import Port, Tag, Node, wire, PN, MathOps
 from tinycombinator.runtime.python import run as run_node
 
 
@@ -34,10 +34,10 @@ class Term:
   def dups(self, label: int = None):
     if label is None: label = fresh_label()
     d = Node(Tag.Dup, label = label)
-    wire(Port(d, MAIN), self.port)
-    return Term(Port(d, AUX1)), Term(Port(d, AUX2))
+    wire(Port(d, PN.MAIN), self.port)
+    return Term(Port(d, PN.AUX1)), Term(Port(d, PN.AUX2))
 
-  def binary(self, other: "Term", tag: Tag, sides: Tuple[int, int] = (AUX1, AUX2, MAIN), label: int = 0):
+  def binary(self, other: "Term", tag: Tag, sides: Tuple[int, int] = (PN.AUX1, PN.AUX2, PN.MAIN), label: int = 0):
     self, other = Term(self), Term(other)
     res = Node(tag, label = label)
     wire(Port(res, sides[0]), self.port)
@@ -49,7 +49,7 @@ class Term:
   def __call__(self, *args: "Term"):
     res = self
     for arg in args:
-      res = Term.binary(res, arg, Tag.App, (MAIN, AUX1, AUX2))
+      res = Term.binary(res, arg, Tag.App, (PN.MAIN, PN.AUX1, PN.AUX2))
     return res
   
 
@@ -58,11 +58,11 @@ class Term:
     tars = []
 
     match self.port.node.tag:
-      case Tag.App: tars = [MAIN, AUX1]
-      case Tag.Lam: tars = [AUX2]
+      case Tag.App: tars = [PN.MAIN, PN.AUX1]
+      case Tag.Lam: tars = [PN.AUX2]
       case Tag.Null | Tag.Prim: return []
-      case Tag.Dup: tars = [MAIN]
-      case Tag.Sup: tars = [AUX1, AUX2]
+      case Tag.Dup: tars = [PN.MAIN]
+      case Tag.Sup: tars = [PN.AUX1, PN.AUX2]
 
     return [Term(self.port.node.con[i]) for i in tars]
   
@@ -131,7 +131,7 @@ def decompile(term:Term)->str:
     if sum(len(ln) for ln in lns) <= 20: return [ws + " ".join(map(str.strip, lns))]
     return [ws + ln for ln in lns]
   def _tree(term:Port | None, stack:list[tuple[int, int]])->list[str]:
-
+    if term is None: return ["<CANT TREE: NONE>"]
     if not term.is_term(): return [f"<CANT TREE: {term.node.tag}, {term.number}>"]
 
     if term is None: return ["NONE"]
@@ -140,20 +140,20 @@ def decompile(term:Term)->str:
     if node in ctx: return [varname(node)]
 
     match node.tag:
-      case Tag.App: return ["("] + idn(_tree(node.con[MAIN], stack) + _tree(node.con[AUX1], stack), ")")
+      case Tag.App: return ["("] + idn(_tree(node.con[PN.MAIN], stack) + _tree(node.con[PN.AUX1], stack), ")")
       case Tag.Lam:
-        if term.number == AUX1: return [varname(node)]
-        return [f"λ" + (varname(node) if node.con[AUX1].node.tag != Tag.ERA else "" )] + idn(_tree(node.con[AUX2], stack))
+        if term.number == PN.AUX1: return [varname(node)]
+        return [f"λ" + (varname(node) if node.con[PN.AUX1].node.tag != Tag.ERA else "" )] + idn(_tree(node.con[PN.AUX2], stack))
       case Tag.Dup:
-        if hide_dups: return _tree(node.con[MAIN], [*stack, (term.node.label, term.number)])
+        if hide_dups: return _tree(node.con[PN.MAIN], [*stack, (term.node.label, term.number)])
         if term in ctx: return [varname(term)]
-        names = [varname(Port(term.node, AUX1)), varname(Port(term.node, AUX2))]
-        return [f"{names[term.number-1]} where &{node.label}{{{names[0]}, {names[1]}}} ="] + idn(_tree(node.con[MAIN], stack))
+        names = [varname(Port(term.node, PN.AUX1)), varname(Port(term.node, PN.AUX2))]
+        return [f"{names[term.number.value-1]} where &{node.label}{{{names[0]}, {names[1]}}} ="] + idn(_tree(node.con[PN.MAIN], stack))
 
       case Tag.Sup:
         for i, (label, side) in enumerate(stack):
           if label == node.label: return _tree(node.con[side], [*stack[:i], *stack[i+1:]])
-        return [f"&{node.label}{{"] + idn(_tree(node.con[AUX1], stack) + _tree(node.con[AUX2], stack), "}")
+        return [f"&{node.label}{{"] + idn(_tree(node.con[PN.AUX1], stack) + _tree(node.con[PN.AUX2], stack), "}")
       case Tag.Prim:
         if isinstance(node.value, MathOps): return [str(node.value)]
         return [f"{node.value}"]
@@ -178,16 +178,16 @@ def parse_fun(fn: Callable)->Node:
   res = Term(res).port
   assert isinstance(res, Port), f"expected Port, got {type(res)}"
   lam = Node(Tag.Lam)
-  wire(Port(lam, AUX2), res)
+  wire(Port(lam, PN.AUX2), res)
   prev = None
 
-  bindr = Term(Port(lam, AUX1))
+  bindr = Term(Port(lam, PN.AUX1))
 
   for node in lam.walk():
-    for i,p in enumerate(node.con):
-      if p is None or (p.node is lam and p.number == AUX1): continue
+    for i ,p in enumerate(node.con):
+      if p is None or (p.node is lam and p.number == PN.AUX1): continue
       if p.node is x.node:
-        cur = Port(node, i)
+        cur = Port(node, PN(i))
         if prev is None:
           prev = cur
           wire(prev, bindr.port)
@@ -195,9 +195,9 @@ def parse_fun(fn: Callable)->Node:
           ds = bindr.dups()
           wire(prev, ds[0].port)
           wire(cur, ds[1].port)
-          prev = Port(ds[0].port.node, MAIN)
+          prev = Port(ds[0].port.node, PN.MAIN)
 
-  if lam.con[AUX1] is None: wire(Port(lam, AUX1), Port(Node(Tag.ERA)))
+  if lam.con[PN.AUX1] is None: wire(Port(lam, PN.AUX1), Port(Node(Tag.ERA)))
   return Port(lam)
 
 def ID(): return Term(lambda x: x)
@@ -208,6 +208,6 @@ def step(term: Term): return run(term, 1)
 
 def run(term: Term, steps: int = None):
   root = Node(Tag.ROOT)
-  wire(Port(root, MAIN), term.port)
+  wire(Port(root, PN.MAIN), term.port)
   run_node(root, steps)
-  return Term(root.con[MAIN])
+  return Term(root.con[PN.MAIN])
