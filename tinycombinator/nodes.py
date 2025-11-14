@@ -39,13 +39,9 @@ class Tag(Enum):
       case Tag.Prim | Tag.Null: return True
       case _: raise ValueError(f"unknown tag: {self.node.tag}")
 
-
-
 class MathOps(Enum):
   Add, Sub, Mul, Div, Mod, Pow, Eq, Ne, Lt, Gt = range(10)
   __str__ = __repr__ = lambda self: ["+", "-", "*", "/", "%", "^", "==", "!=", "<", ">"][self.value]
-
-
 
 
 @dataclass
@@ -80,18 +76,21 @@ class Node:
   def __hash__(self): return hash(id(self))
   def __repr__(self)->str: return f"<Node {self.tag}>"
 
+
+
 @dataclass(frozen=True)
 class Port:
 
-  def __post_init__(self):
-    assert isinstance(self.number, PN)
-    assert isinstance(self.node, Node)
+  node:Node
+  number: PN
 
-  node: Node
-  number: PN = PN.MAIN
+  def __init__(self, node: Node, number: PN = 0):
+    if isinstance(number, int): number = PN(number)
+    assert isinstance(node, Node)
+    super().__setattr__("node", node)
+    super().__setattr__("number", number)
 
   def other(self): return self.node.con[self.number]
-  
 
   def is_term(self): return self.node.tag.negative_polarity(self.number)
 
@@ -103,9 +102,11 @@ class Port:
 
 
 def wire(ic: Port, other: Port):
+
   ic, other = (Port(*p) if isinstance(p, tuple) else p for p in (ic, other))
   assert ic.is_term() != other.is_term(), f"cannot wire {ic} and {other}"
   ic.node.con[ic.number.value] = other
   other.node.con[other.number.value] = ic
+
 
 

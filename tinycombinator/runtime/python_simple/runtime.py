@@ -1,5 +1,6 @@
 from tinycombinator.nodes import Node, Port, Tag, wire, PN, MathOps
 from tinycombinator.helpers import debug
+from tinycombinator.term import Node
 
 
 def erase(era:Node, app:Node)->Node:
@@ -53,10 +54,16 @@ def step(node: Node):
     if port and redex(port): return True
   
 
-def run(node: Node, steps: int = None):
+def run(root: Node, steps: int = None):
+  """reduces inplace"""
+  assert root.tag == Tag.ROOT, f"expected ROOT, got {Node.tag}"
   if steps is None: steps = int(1e9)
   for _ in range(steps):
-    if not step(node): break
+
+    if not step(root): break
+
+
+
 
   
 

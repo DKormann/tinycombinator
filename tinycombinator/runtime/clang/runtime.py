@@ -1,9 +1,7 @@
 import ctypes
-from email.policy import default
 import hashlib
 import os
 from pathlib import Path
-from re import I
 from tinycombinator.helpers import DEBUG, debug
 from tinycombinator.nodes import PN, Node, Port, Tag, wire, MathOps
 from tinycombinator.term import Term
@@ -12,7 +10,12 @@ from tinycombinator.term import Term
 current_dir = Path(__file__).parent
 c_path = current_dir / "main.c"
 lib_path = current_dir / "tmp"
+
 os.makedirs(lib_path.parent, exist_ok=True)
+
+CPtr = ctypes.c_void_p
+Cint = ctypes.c_int
+
 
 class CPort(ctypes.Structure):
   loc: int
@@ -28,95 +31,91 @@ def encoded_ports(tag:Tag):
     case Tag.ROOT | Tag.ERA: return [PN.MAIN]
   return []
 
-def term_ports(tag:Tag): return [i for i in PN if tag.negative_polarity(i)]
+def neg_ports(tag:Tag): return [i for i in PN if tag.negative_polarity(i)]
 
 side = int
 num = int
 
-
-
-
-def get_lib():
-
-  c_code = c_path.read_text()
-  c_hash = hashlib.sha256(c_code.encode()).hexdigest()
-
-  if (not (lib_path / "hash").exists()) or (c_hash != (lib_path/"hash").read_text()):
-    debug("compiling ... ")
-    os.system(f"clang -shared -o {lib_path/ 'main.so'} {c_path}")
-    (lib_path/"hash").write_text(c_hash)
-
+def CCall(name:str, argtypes: list[type], restype: type, *args):
   import threading
-
   local = threading.local()
   if not hasattr(local, "lib"):
-    local.lib = ctypes.CDLL(lib_path / "main.so")
-    def fun(name, ins, outs):
-      getattr(local.lib, name).argtypes = ins
-      getattr(local.lib, name).restype = outs
+    c_code = c_path.read_text()
+    c_hash = hashlib.sha256(c_code.encode()).hexdigest()
 
-    fun("new_runtime", [], ctypes.c_void_p)
-    fun("run", [ctypes.c_void_p], ctypes.c_int)
-    fun("new_node", [ctypes.c_int, ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
-    fun("set_root", [ctypes.c_int, ctypes.c_void_p], None)
-    fun("get_root", [ctypes.c_void_p], ctypes.c_int)
-    fun("set_port", [CPort, CPort, ctypes.c_void_p], None)
-    fun("get_port", [CPort, ctypes.c_void_p], CPort)
-    fun("get_tag", [ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
-    fun("get_label", [ctypes.c_int, ctypes.c_void_p], ctypes.c_int)
-    # fun("get_port_target", [CPort, ctypes.c_void_p], ctypes.c_int)
-    fun("set_dup_aux", [ctypes.c_int, CPort, CPort, ctypes.c_void_p], None)
+    if (not (lib_path / "hash").exists()) or (c_hash != (lib_path/"hash").read_text()):
+      debug("compiling ... ")
+
+      if os.system(f"clang -shared -o {lib_path/ 'main.so'} {c_path}"):
+        print("\x1b[31mCLANG ERROR\x1b[0m")
+        exit(256) 
+
+      (lib_path/"hash").write_text(c_hash)
+    
+    local.lib = ctypes.CDLL(lib_path / "main.so")
+
+  fun = getattr(local.lib, name)
+  fun.argtypes = argtypes
+  fun.restype = restype
+  return fun(*args)  
+
     
 
-  return local.lib
 
-DEBUG.set(1)
-lib = get_lib()
 
-def serialize_term(term:Term, lib:ctypes.CDLL)->ctypes.c_void_p:
-  rt = lib.new_runtime()
+
+
+def serialize_node(root:Node)->CPtr:
+  rt = CCall("new_runtime", [], CPtr)
   cache = {}
-  root = (Port(Node(Tag.ROOT), PN.MAIN))
-  wire(root, term.port)
-  for node in term.port.node.walk(): cache[node] = lib.new_node(node.tag.value, node.label, rt)
-  lib.set_root(cache[root.node], rt)
+  for node in root.walk(): cache[node] = CCall("new_node", [Cint, Cint, CPtr], Cint, node.tag.value, node.label, rt)
+  
+  CCall("set_root", [Cint, CPtr], None, cache[root], rt)
 
-  for node in term.port.node.walk():
+  for root in root.walk():
 
     def c_connect(side:int):
-      portn = encoded_ports(node.tag)[side]
-      o = Port(node, portn).other()
-      cside = (encoded_ports if node.tag.negative_polarity(portn) else term_ports)(o.tag).index(o.number)
-      lib.set_port(CPort(cache[node], side), CPort(cache[o.node], cside), rt)
 
-    match node.tag:
+      portn = encoded_ports(root.tag)[side]
+      o = Port(root, portn).other()
+      neg = root.tag.negative_polarity(portn)
+      cside = (encoded_ports if neg else neg_ports)(o.tag).index(o.number)
+
+      # debug(f"\n\nCONNECT: {root} {side=} {portn} {neg=}")
+      # debug(f"OTHER: {o.node} {cside=} {o.number} {cside}")
+
+
+      CCall("set_port", [CPort, CPort, CPtr], None, CPort(cache[root], side), CPort(cache[o.node], cside), rt)
+
+    match root.tag:
       case Tag.Dup:
         c_connect(0)
         ps = []
         for i in [PN.AUX1, PN.AUX2]:
-          o = node.con[i].other()
+          o = root.con[i].other()
           oside = encoded_ports(o.tag).index(o.number)
-          ps.append(CPort(cache[node], oside))
-        lib.set_dup_aux( cache[node], *ps, rt)
-      case Tag.Prim: lib.set_port(CPort(cache[node], 0), CPort(node.value,0) if isinstance(node.value, int) else CPort(node.value.value,1), rt)
+          ps.append(CPort(cache[root], oside))
+        CCall("set_dup_aux", [Cint, CPort, CPort, CPtr], None, cache[root], *ps, rt)
+      case Tag.Prim:
+        CCall("set_port", [CPort, CPort, CPtr], None, CPort(cache[root], 0),
+        CPort(root.value,0) if isinstance(root.value, int) else CPort(root.value.value,1), rt)
       case _:
-        for i in range(len(encoded_ports(node.tag))): c_connect(i)
+        for i in range(len(encoded_ports(root.tag))): c_connect(i)
 
   return rt
 
 
-def deserialize_term(rt:ctypes.c_void_p, lib:ctypes.CDLL):
-
+def deserialize_term(rt:CPtr):
   cache = {}
   def go(loc:int)->Node:
     if loc in cache: return cache[loc]
-    node = Node(Tag(lib.get_tag(loc, rt)), lib.get_label(loc, rt))
+    node = Node(Tag(CCall("get_tag", [Cint, CPtr], Cint, loc, rt)), CCall("get_label", [Cint, CPtr], Cint, loc, rt))
     cache[loc] = node
 
     def connect(side:int, pn:PN):
-      port: CPort = lib.get_port(CPort(loc, side), rt)
+      port: CPort = CCall("get_port", [CPort, CPtr], CPort, CPort(loc, side), rt)
       o = go(port.loc)
-      c_port = (encoded_ports if node.tag.negative_polarity(pn) else term_ports)(o.tag)[port.side]
+      c_port = (encoded_ports if node.tag.negative_polarity(pn) else neg_ports)(o.tag)[port.side]
       wire((node, pn),(o, c_port))
 
     match node.tag:
@@ -124,47 +123,19 @@ def deserialize_term(rt:ctypes.c_void_p, lib:ctypes.CDLL):
         connect(0, PN.MAIN)
         """TODO"""
       case Tag.Prim:
-        dat = lib.get_port(CPort(loc, 0), rt)
+        dat = CCall("get_port", [CPort, CPtr], CPort, CPort(loc, 0), rt)
         node.value = MathOps(dat.loc) if dat.side else dat.loc
       case _:
         for i in enumerate(encoded_ports(node.tag)): connect(*i)
     return node
-
-  return Term(Port(go(lib.get_root(rt))).other())
-
+  return go(CCall("get_root", [CPtr], Cint, rt))
 
 
-def round_trip(term:Term):
-  s = str(term)
-  print(f"SER {s}")
-  r = serialize_term(term, lib)
-  d = deserialize_term(r, lib)
-  assert str(d) == s, f"expected:\n {s}\ngot:\n {str(d)}"
+def run(root:Node, steps:int):
 
-t = Term(lambda x, y: x)
-t2 = Term(lambda x, y: x)
-
-t0 = Term(lambda x:x)
-
-round_trip(Term.sup(t, t2))
-round_trip(t0)
-ds = t0.dups()
-
-round_trip(Term(lambda x: ds[0](ds[1])))
-
-os.system("clear")
-round_trip(Term(lambda x: x + 1))
-print("OK")
+  r = serialize_node(root)
+  CCall("run", [CPtr, Cint], Cint, r, steps)
+  wire((root, 0), deserialize_term(r).con[0])
 
 
-a = t(t2)
-
-print(a)
-
-r = serialize_term(a, lib)
-res = lib.run(r)
-
-
-res = deserialize_term(r, lib)
-print(res)
 

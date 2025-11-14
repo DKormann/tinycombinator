@@ -1,6 +1,8 @@
-from tinycombinator.helpers import hide_dups
+import os
+from pathlib import Path
+from tinycombinator.helpers import DEBUG, hide_dups
 
-from tinycombinator.term import Term
+from tinycombinator.term import BACKEND, Term
 from tinycombinator.lib import scott, church
 
 
@@ -10,23 +12,32 @@ class Node:
 @Term
 def FN(f): return f + 1
 
+
+def compare(t:Term):
+  s = str(t)
+
+  print(s)
+
+  with BACKEND("python_simple") :
+    r1 = t.run()
+  with BACKEND("clang"), DEBUG(1):
+    r2 = t.run()
+  
+
+  
+  assert str(r1) == str(r2), f"\n{str(r1)} != \n{str(r2)}"
+  print(f"RESULT: {r2}\n\n")
+  # os.system("clear")
+
 if __name__ == "__main__":
 
-  from tinycombinator.lib import church
-
-  # hide_dups.set(True)
-
-  # print(scott.nat(2))
 
 
-  # t = Term(lambda x: 1)
+  t = Term(lambda x: x)(lambda y: y)
 
-  # print(t)
+  compare(t)
 
-
-
-
-
-
-
+  compare(Term(
+    lambda x: Term(lambda z, y:y)(x)
+  ))
 
