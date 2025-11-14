@@ -4,7 +4,7 @@ import unittest
 
 from tinycombinator.helpers import Context, Env, hide_dups, print_tree
 from tinycombinator.lib import church, scott
-from tinycombinator.nodes import Node, Port, Tag, wire, PN.MAIN
+from tinycombinator.nodes import Node, Port, Tag, wire, PN
 from tinycombinator.term import Term, ID, T, F, label_reset, run, step
 
 basics = [ID, T, F, church.Nat(2), ID()(ID), ID().sup(ID())]
@@ -92,10 +92,10 @@ class ConstructionRepresentation(unittest.TestCase):
         n = Node(Tag.Null)
 
         wire((s, PN.MAIN),(d, PN.MAIN))
-        wire((s, 1 + i),(d, 1 + j))
-        wire((n, 0),(s, 2 - i))
+        wire((s, PN(1 + i)),(d, PN(1 + j)))
+        wire((n, PN.MAIN),(s, PN(2 - i)))
 
-        t = Term(Port(d, 2 - j))
+        t = Term(Port(d, PN(2 - j)))
 
         with Context(hide_dups = True): self._assert_fmt(t, Term(None))
         self._assert_run(t, Term(None))

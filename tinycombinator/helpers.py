@@ -26,9 +26,9 @@ class Env:
   @contextmanager
   def __call__(self, value: int):
     old_value = self.value
-    self.value = value
+    self.set(value)
     try: yield
-    finally: self.value = old_value
+    finally: self.set(old_value)
 
 
 
@@ -39,7 +39,7 @@ hide_dups = Env("hide_dups", False)
 print_tree = Env("print_tree", True)
 DEBUG = Env("DEBUG", 0)
 TIMEIT = Env("TIMEIT", False)
-BACKEND = Env("BACKEND", "c")
+
 
 @contextmanager
 def Context(**kwargs):

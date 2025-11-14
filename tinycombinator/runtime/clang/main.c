@@ -41,7 +41,6 @@ void free_tree(BST *root) {
 
 
 #define MAX_TERMS 1<<20
-
 #define RED     "\x1b[31m"
 #define RESET   "\x1b[0m"
 
@@ -70,6 +69,7 @@ typedef struct {
   LOC empty_index;
   LOC node_ctr;
   int steps;
+  int fuel;
 
 } Runtime;
 
@@ -117,7 +117,7 @@ Term* get_node(LOC loc, Runtime* runtime){
 }
 
 void set_port(Port dest, Port src, Runtime* runtime){
-  if (DEBUG) printf("SET_PORT: %d %d -> %d %d\n", dest.loc, dest.side, src.loc, src.side);
+  // if (DEBUG) printf("SET_PORT: %d %d -> %d %d\n", dest.loc, dest.side, src.loc, src.side);
   Term* term = get_node(dest.loc, runtime);
   term->s[dest.side] = src.loc << 1 | src.side;
 }
@@ -178,14 +178,27 @@ char* tag_fmt(Term* term){
   }
 }
 
+
+char* port_fmt(Port port){
+  char*buf = malloc(sizeof(char) * 20);
+  sprintf(buf, "<%d %d>", port.loc, port.side);
+  return buf;
+}
+
 char* term_fmt(Term* term){
   if (DEBUG >= 1){
     char*buf = malloc(sizeof(char) * 20);
-    sprintf(buf, "%s %p", tag_fmt(term), term);
+    char* a = port_fmt(deserialize_port(term->s[0]));
+    char* b = port_fmt(deserialize_port(term->s[1]));
+    sprintf(buf, "%s: %s %s", tag_fmt(term), a,b);
+    free(a);
+    free(b);
     return buf;
   }
   return tag_fmt(term);
 }
+
+
 
 LOC new_node(Tag tag, int label, Runtime* runtime){
   LOC res = 0;
@@ -249,28 +262,33 @@ int pos_sides[][2] = {
   [Sup] = {0, 1}
 };
 
-void subs(Port src, Port dst, Runtime* runtime){
-  Tag dtag = get_tag(dst.loc, runtime); 
-  set_port((Port){.loc = dst.loc, .side = pos_sides[dtag][dst.side]}, src, runtime);
+int is_var(Port p, Runtime* runtime){
+  Term* t = get_node(p.loc, runtime);
+  return (t->label == Lam && p.side) || (t->label == Dup);
 }
+
+void subs(Port src, Port dst, Runtime* runtime){
+
+  Port src_target = get_port(src, runtime);
+
+  if (is_var(src_target, runtime)){
+    error("TODO var backlink update");
+  }
+  
+  set_port(dst, src, runtime);
+}
+
+
 
 void app_lam(PORT* buf, LOC app, LOC lam, Runtime* runtime){
   printf("APP_LAM\n");
+  DEBUG=1;
+  if (DEBUG) printf("APP: %d %s\n", app, term_fmt(get_node(app, runtime)));
+  if (DEBUG) printf("LAM: %d %s\n", lam, term_fmt(get_node(lam, runtime)));
 
-  
+  subs(get_port((Port){app, 1}, runtime), get_port((Port){lam, 0}, runtime), runtime);
 
-
-  Port vr = get_port((Port){lam, 0}, runtime);
-  Port bod = get_port((Port){lam, 1}, runtime);
-
-  Port fn = get_port((Port){app, 0}, runtime);
-  Port arg = get_port((Port){app, 1}, runtime);
-
-  printf("LAM: %d var: %d %d bod: %d %d\n", lam, vr.loc, vr.side, bod.loc, bod.side);
-
-  subs(arg, vr, runtime);
-
-  (*buf) = serialize_port(bod);
+  (*buf) = serialize_port(get_port((Port){lam, 1}, runtime));
 }
 
 void app_sup(PORT* buf, LOC sup, LOC app, Runtime* runtime){
@@ -294,6 +312,8 @@ void dup_null(PORT* buf, LOC dup, LOC null, Runtime* runtime){
 }
 
 int handle_redex(PORT* buf, LOC term, LOC other, Runtime* runtime){
+
+  if (runtime->steps >= runtime->fuel) return 0;
 
 
   void (*handler)(PORT*, LOC, LOC, Runtime*) = NULL;
@@ -322,74 +342,64 @@ int handle_redex(PORT* buf, LOC term, LOC other, Runtime* runtime){
   }
   if (handler != NULL){
     handler(buf, term, other, runtime);
+    runtime->fuel ++;
     return 1;
   }
   return 0;
 }
 
-
-
 int strong_form = 0;
-
 BST* strong_form_seen = NULL;
 
+void reduce(PORT* buf, Runtime* runtime){
+  printf("RED \n");
 
-void reduce(PORT* buf, LOC term, Runtime* runtime){
+  Port port = deserialize_port(*buf);
+  Term* node = get_node(port.loc, runtime);
+  if (node->tag == Lam && port.side){
+    printf("not a standalone term");
+    return;
+  }
 
 
-  LOC other = get_port_target((Port){term, 0}, runtime);
+  if (handle_redex(buf, port.loc, deserialize_port(node->s[0]).loc, runtime)){
+    return reduce (buf, runtime);
+  }
 
-  
 
-  handle_redex(buf, term, other, runtime);
+  switch (node->tag){
+    case Lam:{
+      PORT* pbod = &node->s[1];
 
-  // // if (handle_redex(term, other, runtime)) return reduce(other, runtime);
-  // switch (get_tag(term, runtime)){
-  // //   case App:
-  // //     reduce(buf, sother, runtime);
-  // //     // if (strong_form){
-  // //     //   LOC s1 = get_port_target(term, 1, runtime);
-  // //     //   reduce(s1, runtime);
-  // //     // }
-  // //     return;
-  // //   case Dup:
-  // //     if (strong_form){
-  // //       if (contains(strong_form_seen, term)) return;
-  // //       strong_form_seen = insert(strong_form_seen, term);
-  // //     }
-  // //     return reduce(other, runtime);
-  // //   case Sup:
-  // //     reduce(other, runtime);
-  // //     LOC s1 = get_port_target(term, 1, runtime);
-  // //     reduce(s1, runtime);
-  // //     return;
-  // //   case Lam:
-  // //     // s1 = get_port_target(term, 1, runtime);
-  // //     // reduce(s1, runtime);
-  // //     return;
-  // //     case Null: case Prim: case Freed: case ERA: return;
-  //   case ROOT: return reduce(buf, other, runtime);
+      DEBUG=1;
+      reduce(pbod, runtime);
 
-  //   default: break;
+  }
+  default: break;
+  }  
 
-  // }
 }
 
 
 
-int run(Runtime* runtime){
+int run(Runtime* runtime, int steps){
 
-  printf("RUN\n");
 
+  runtime->fuel = steps;
+  runtime->steps = 0;
 
   LOC root = runtime->root;
   PORT* resbuf = get_node(root, runtime)->s;
 
-  LOC term = (*resbuf) >> 1;
 
 
-  reduce(resbuf, term, runtime);
-  return 1;
+
+  reduce(resbuf, runtime);
+
+  Port ree = deserialize_port(get_node(root, runtime)->s[0]);
+  printf("RES: %d %d\n", ree.loc, ree.side);
+
+  return runtime->steps;
     
 }
 

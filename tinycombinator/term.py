@@ -1,11 +1,22 @@
-from typing import Callable, List, Tuple
-from tinycombinator.helpers import DEBUG, hide_dups, print_tree, debug
+import os
+from pathlib import Path
+from typing import Any, Callable, List, Tuple
+from tinycombinator.helpers import DEBUG, Env, hide_dups, print_tree, debug
 from tinycombinator.nodes import Port, Tag, Node, wire, PN, MathOps
-from tinycombinator.runtime.python import run as run_node
+import importlib
 
+
+BACKEND = Env("BACKEND", "python_simple")
+runtime_path = Path(__file__).parent/"runtime"
+
+def backend_set(value):
+  Env.set(BACKEND, value)
+  assert (runtime_path/value).is_dir(), f"ERROR: no such backend {runtime_path/value}\noptions: {os.listdir(runtime_path)}"
+
+BACKEND.set = backend_set
 
 class Term:
-  def __init__(self, x: Port | Node | int | Callable):
+  def __init__(self, x: Any):
     if x is None: x = Node(Tag.Null)
     if hasattr(self, "port"): return
     if isinstance(x, Port): pass
@@ -22,10 +33,8 @@ class Term:
 
     if isinstance(x, Term): return x
     if callable(x):
-      if x.__code__.co_argcount == 0:
-        return x()
-      else:
-        x = parse_fun(x)
+      if x.__code__.co_argcount == 0: return x()
+      else: x = parse_fun(x)
   
     return super().__new__(cls)
 
@@ -76,11 +85,7 @@ class Term:
     if name == "node": return self.port.node
     if name == "side": return self.port.number
     if name == "tag": return self.node.tag
-
-
     return super().__getattr__(name)
-
-
 
   @staticmethod
   def binapp(op: MathOps):
@@ -107,6 +112,13 @@ class Term:
     """deep copy of the term"""
     return Term(Port(self.port.node.clone(), self.port.number))
 
+  def run(self, steps:int = int(1e6))->"Term":
+    run : Callable[[Node, int], None] = importlib.import_module("tinycombinator.runtime." + BACKEND.value + ".runtime").run
+    wire(Port(Node(Tag.ROOT)), self.port )
+    root = Port(Node(Tag.ROOT))
+    wire(root, self.clone().port)
+    run(root.node, steps)
+    return Term(root.other())
 
 def fresh_label()->int:
   global lab_ctr
@@ -121,7 +133,7 @@ label_reset()
   
 
 def decompile(term:Term)->str:
-  ws = "  " if print_tree else ""
+  ws = "  " if print_tree else "" 
   ctx = {}
   def varname(node:Node | None):
     if node is None: return ""
@@ -204,10 +216,4 @@ def ID(): return Term(lambda x: x)
 def T(): return Term(lambda x, y: x)
 def F(): return Term(lambda x, y: y)
 
-def step(term: Term): return run(term, 1)
 
-def run(term: Term, steps: int = None):
-  root = Node(Tag.ROOT)
-  wire(Port(root, PN.MAIN), term.port)
-  run_node(root, steps)
-  return Term(root.con[PN.MAIN])
