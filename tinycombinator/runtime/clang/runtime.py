@@ -15,12 +15,11 @@ os.makedirs(lib_path.parent, exist_ok=True)
 
 CPtr = ctypes.c_void_p
 Cint = ctypes.c_int
+PORT = ctypes.c_int32
 
-
-class CPort(ctypes.Structure):
-  loc: int
-  side: int
-  _fields_ = [("loc", ctypes.c_int32), ("side", ctypes.c_int32)]
+def make_port(loc: int, side: int) -> int: return (loc << 1) | side
+def get_loc(port: int) -> int: return port >> 1
+def get_side(port: int) -> int: return port & 1
 
 
 def encoded_ports(tag:Tag):
@@ -37,85 +36,86 @@ side = int
 num = int
 
 def CCall(name:str, argtypes: list[type], restype: type, *args):
+
+  if len(argtypes) != len(args):
+    print(f"ERROR CLANGCALL: {name} {argtypes} {args}")
+    exit(256)
   import threading
   local = threading.local()
   if not hasattr(local, "lib"):
     c_code = c_path.read_text()
     c_hash = hashlib.sha256(c_code.encode()).hexdigest()
-
     if (not (lib_path / "hash").exists()) or (c_hash != (lib_path/"hash").read_text()):
       debug("compiling ... ")
-
       if os.system(f"clang -shared -o {lib_path/ 'main.so'} {c_path}"):
         print("\x1b[31mCLANG ERROR\x1b[0m")
         exit(256) 
-
       (lib_path/"hash").write_text(c_hash)
-    
+
     local.lib = ctypes.CDLL(lib_path / "main.so")
 
   fun = getattr(local.lib, name)
   fun.argtypes = argtypes
   fun.restype = restype
-  return fun(*args)  
-
-    
-
-
-
-
+  res = fun(*args)
+  return res
 
 def serialize_node(root:Node)->CPtr:
+
   rt = CCall("new_runtime", [], CPtr)
   cache = {}
-  for node in root.walk(): cache[node] = CCall("new_node", [Cint, Cint, CPtr], Cint, node.tag.value, node.label, rt)
+  for node in root.walk():
+    port = CCall("new_node", [Cint, Cint, CPtr], Cint, node.tag.value, node.label, rt)
+    cache[node] = get_loc(port)
   
   CCall("set_root", [Cint, CPtr], None, cache[root], rt)
 
-  for root in root.walk():
-
+  for node in root.walk():
     def c_connect(side:int):
-
-      portn = encoded_ports(root.tag)[side]
-      o = Port(root, portn).other()
-      neg = root.tag.negative_polarity(portn)
+      portn = encoded_ports(node.tag)[side]
+      o = Port(node, portn).other()
+      neg = node.tag.negative_polarity(portn)
       cside = (encoded_ports if neg else neg_ports)(o.tag).index(o.number)
+      CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], side), make_port(cache[o.node], cside), rt)
+      assert CCall("get_port", [PORT, CPtr], PORT, make_port(cache[node], side), rt) == make_port(cache[o.node], cside)
 
-      # debug(f"\n\nCONNECT: {root} {side=} {portn} {neg=}")
-      # debug(f"OTHER: {o.node} {cside=} {o.number} {cside}")
-
-
-      CCall("set_port", [CPort, CPort, CPtr], None, CPort(cache[root], side), CPort(cache[o.node], cside), rt)
-
-    match root.tag:
+    match node.tag:
       case Tag.Dup:
         c_connect(0)
         ps = []
         for i in [PN.AUX1, PN.AUX2]:
-          o = root.con[i].other()
+          o = node.con[i].other()
           oside = encoded_ports(o.tag).index(o.number)
-          ps.append(CPort(cache[root], oside))
-        CCall("set_dup_aux", [Cint, CPort, CPort, CPtr], None, cache[root], *ps, rt)
+          ps.append(make_port(cache[o.node], oside))
+        CCall("set_dup_aux", [PORT, PORT, PORT, CPtr], None, cache[node], *ps, rt)
       case Tag.Prim:
-        CCall("set_port", [CPort, CPort, CPtr], None, CPort(cache[root], 0),
-        CPort(root.value,0) if isinstance(root.value, int) else CPort(root.value.value,1), rt)
+        CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], 0),
+        make_port(node.value, 0) if isinstance(node.value, int) else make_port(node.value.value, 1), rt)
       case _:
-        for i in range(len(encoded_ports(root.tag))): c_connect(i)
+        for i in range(len(encoded_ports(node.tag))): c_connect(i)
+
 
   return rt
 
 
 def deserialize_term(rt:CPtr):
   cache = {}
-  def go(loc:int)->Node:
+  def go(port:PORT)->Node:
+    loc = get_loc(port)
     if loc in cache: return cache[loc]
-    node = Node(Tag(CCall("get_tag", [Cint, CPtr], Cint, loc, rt)), CCall("get_label", [Cint, CPtr], Cint, loc, rt))
+
+    tag = CCall("get_tag", [PORT, CPtr], Cint, port, rt)
+
+    label= CCall("get_label", [PORT, CPtr], Cint, port, rt)
+    node = Node(Tag(tag), label)
     cache[loc] = node
 
     def connect(side:int, pn:PN):
-      port: CPort = CCall("get_port", [CPort, CPtr], CPort, CPort(loc, side), rt)
-      o = go(port.loc)
-      c_port = (encoded_ports if node.tag.negative_polarity(pn) else neg_ports)(o.tag)[port.side]
+
+      my_c_port = CCall("get_port", [PORT, CPtr], PORT, make_port(loc, side), rt)
+      oside = get_side(my_c_port)
+      o = go(my_c_port)
+      c_port = (encoded_ports if node.tag.negative_polarity(pn) else neg_ports)(o.tag)[oside]
       wire((node, pn),(o, c_port))
 
     match node.tag:
@@ -123,19 +123,24 @@ def deserialize_term(rt:CPtr):
         connect(0, PN.MAIN)
         """TODO"""
       case Tag.Prim:
-        dat = CCall("get_port", [CPort, CPtr], CPort, CPort(loc, 0), rt)
-        node.value = MathOps(dat.loc) if dat.side else dat.loc
+        raise ValueError("Prim not supported")
       case _:
         for i in enumerate(encoded_ports(node.tag)): connect(*i)
     return node
+
+  
   return go(CCall("get_root", [CPtr], Cint, rt))
 
 
 def run(root:Node, steps:int):
-
   r = serialize_node(root)
-  CCall("run", [CPtr, Cint], Cint, r, steps)
-  wire((root, 0), deserialize_term(r).con[0])
+  s = CCall("run", [CPtr, Cint], Cint, r, steps)
+  print(f"run: {s=}")
+  d = deserialize_term(r).con[0]
+  print(f"deserialize_term: {d}")
+  wire((root, 0), d)
+  print("DONE")
+
 
 
 
