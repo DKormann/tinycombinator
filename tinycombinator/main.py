@@ -14,6 +14,7 @@ def FN(f): return f + 1
 
 
 def compare(t:Term):
+
   s = str(t)
 
   print(s)
@@ -27,17 +28,20 @@ def compare(t:Term):
   
   assert str(r1) == str(r2), f"\n{str(r1)} != \n{str(r2)}"
   print(f"RESULT: {r2}\n\n")
-  # os.system("clear")
+
 
 if __name__ == "__main__":
 
 
+  compare(Term(lambda x: x)(lambda y: y))
 
-  t = Term(lambda x: x)(lambda y: y)
+  compare(Term(lambda x,y: x)(lambda x:x))
+  compare(Term(lambda x,y: y)(lambda x:x))
 
-  compare(t)
 
-  compare(Term(
-    lambda x: Term(lambda z, y:y)(x)
-  ))
+
+
+    # compare(Term(
+    #   lambda x: Term(lambda z, y:y)(x)
+    # ))
 

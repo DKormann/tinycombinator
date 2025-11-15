@@ -61,7 +61,7 @@ int get_tag(LOC l, Runtime* runtime){
   return runtime->ICs[l].tag;
 }
 
-void set_port(LOC ic, int s, LOC target, int side, Runtime* runtime){
+void _set_port(LOC ic, int s, LOC target, int side, Runtime* runtime){
   get_ic(ic, runtime)->s[s] = target << 1 | side;
 }
 
@@ -75,12 +75,12 @@ int port_target( LOC l, int side, Runtime* runtime){
 }
 
 void var_lam(LOC lam, LOC target, int side, Runtime* runtime){
-  set_port(lam, 1, target, side, runtime);
-  set_port(target, side, lam, 1, runtime);
+  _set_port(lam, 1, target, side, runtime);
+  _set_port(target, side, lam, 1, runtime);
 }
 
 
-Runtime* new_runtime(){
+Runtime* runtime(){
   Runtime* runtime = calloc(1, sizeof(Runtime));
   return runtime;
 }
@@ -128,7 +128,7 @@ void free_IC(LOC loc, Runtime* runtime){
   }
   IC->tag = Tag_Freed;
   runtime->IC_ctr --;
-  set_port(loc, 0, runtime->free_list, 0, runtime);
+  _set_port(loc, 0, runtime->free_list, 0, runtime);
   runtime->free_list = loc;
 }
 
@@ -143,7 +143,7 @@ LOC ID(Runtime* runtime){
   LOC id = empty_IC(Tag_Lam, 0, runtime);
   // var_lam(id, id, 0, runtime);
 
-  set_port(id, 0, id, 1, runtime);
+  _set_port(id, 0, id, 1, runtime);
   return id;
 }
 
@@ -152,15 +152,15 @@ LOC c1(Runtime* runtime){
   LOC l1 = empty_IC(Tag_Lam, 0, runtime);
   LOC l2 = empty_IC(Tag_Lam, 0, runtime);
   var_lam(l1, l2, 0, runtime);
-  set_port(l1, 0, l2, 0, runtime);
+  _set_port(l1, 0, l2, 0, runtime);
   return l1;
 }
 
 
 LOC mk_binary(Tag tag, int label, LOC s0, LOC s1, Runtime* runtime){
   LOC res = empty_IC(tag, label, runtime);
-  set_port(res, 0, s0, 0, runtime);
-  set_port(res, 1, s1, 0, runtime);
+  _set_port(res, 0, s0, 0, runtime);
+  _set_port(res, 1, s1, 0, runtime);
   return res;
 }
 
