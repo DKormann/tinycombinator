@@ -32,6 +32,7 @@ class Term:
   def __new__(cls, x, *args, **kwargs):
 
     if isinstance(x, Term): return x
+    if x is None: return Term(Node(Tag.Null))
     if callable(x):
       if x.__code__.co_argcount == 0: return x()
       else: x = parse_fun(x)
@@ -44,7 +45,11 @@ class Term:
     if label is None: label = fresh_label()
     d = Node(Tag.Dup, label = label)
     wire(Port(d, PN.MAIN), self.port)
-    return Term(Port(d, PN.AUX1)), Term(Port(d, PN.AUX2))
+    
+    res = Term(Port(d, PN.AUX1)), Term(Port(d, PN.AUX2))
+    for t in res: wire(t.port, Port(Node(Tag.ERA)))
+    return res
+
 
   def binary(self, other: "Term", tag: Tag, sides: Tuple[int, int] = (PN.AUX1, PN.AUX2, PN.MAIN), label: int = 0):
     self, other = Term(self), Term(other)
@@ -142,7 +147,7 @@ def decompile(term:Term)->str:
     lns = lns[:-1] + [lns[-1] + end]
     if sum(len(ln) for ln in lns) <= 20: return [ws + " ".join(map(str.strip, lns))]
     return [ws + ln for ln in lns]
-  def _tree(term:Port | None, stack:list[tuple[int, int]])->list[str]:
+  def _tree(term:Port | Any, stack:list[tuple[int, int]])->list[str]:
     if term is None: return ["<CANT TREE: NONE>"]
     if not term.is_term(): return [f"<CANT TREE: {term.node.tag}, {term.number}>"]
 
@@ -155,6 +160,7 @@ def decompile(term:Term)->str:
       case Tag.App: return ["("] + idn(_tree(node.con[PN.MAIN], stack) + _tree(node.con[PN.AUX1], stack), ")")
       case Tag.Lam:
         if term.number == PN.AUX1: return [varname(node)]
+        # if term.number == PN.AUX1: return ["<VAR>"]
         return [f"λ" + (varname(node) if node.con[PN.AUX1].node.tag != Tag.ERA else "" )] + idn(_tree(node.con[PN.AUX2], stack))
       case Tag.Dup:
         if hide_dups: return _tree(node.con[PN.MAIN], [*stack, (term.node.label, term.number)])

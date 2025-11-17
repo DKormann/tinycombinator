@@ -73,21 +73,22 @@ def serialize_node(root:Node)->CPtr:
   for node in root.walk():
     def c_connect(side:int):
       portn = encoded_ports(node.tag)[side]
-      o = Port(node, portn).other()
+      other = Port(node, portn).other()
       neg = node.tag.negative_polarity(portn)
-      cside = (encoded_ports if neg else neg_ports)(o.tag).index(o.number)
-      CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], side), make_port(cache[o.node], cside), rt)
-      assert CCall("get_port", [PORT, CPtr], PORT, make_port(cache[node], side), rt) == make_port(cache[o.node], cside)
+      options = (encoded_ports if neg else neg_ports)(other.tag)
+      cside = options.index(other.number)
+      CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], side), make_port(cache[other.node], cside), rt)
+      assert CCall("get_port", [PORT, CPtr], PORT, make_port(cache[node], side), rt) == make_port(cache[other.node], cside)
 
     match node.tag:
       case Tag.Dup:
         c_connect(0)
         ps = []
         for i in [PN.AUX1, PN.AUX2]:
-          o = node.con[i].other()
+          o = node.con[i]
           oside = encoded_ports(o.tag).index(o.number)
           ps.append(make_port(cache[o.node], oside))
-        CCall("set_dup_aux", [PORT, PORT, PORT, CPtr], None, cache[node], *ps, rt)
+        CCall("set_dup_aux", [PORT, PORT, PORT, CPtr], None, make_port(cache[node], 0), ps[0], ps[1], rt)
       case Tag.Prim:
         CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], 0),
         make_port(node.value, 0) if isinstance(node.value, int) else make_port(node.value.value, 1), rt)
@@ -116,14 +117,15 @@ def deserialize_term(rt:CPtr):
       oside = get_side(my_c_port)
       o = go(my_c_port)
       c_port = (encoded_ports if node.tag.negative_polarity(pn) else neg_ports)(o.tag)[oside]
+      # print(f"connect {node} {pn} {node.tag.negative_polarity(pn)=} {oside=} {o} {c_port}")
       wire((node, pn),(o, c_port))
 
     match node.tag:
       case Tag.Dup:
         connect(0, PN.MAIN)
-        """TODO"""
-      case Tag.Prim:
-        raise ValueError("Prim not supported")
+        """TODO?"""
+      case Tag.Prim: raise ValueError("Prim not supported")
+      case Tag.ERA: pass
       case _:
         for i in enumerate(encoded_ports(node.tag)): connect(*i)
     return node
@@ -134,12 +136,9 @@ def deserialize_term(rt:CPtr):
 
 def run(root:Node, steps:int):
   r = serialize_node(root)
-  s = CCall("run", [CPtr, Cint], Cint, r, steps)
-  print(f"run: {s=}")
+  CCall("run", [CPtr, Cint], Cint, r, steps)
   d = deserialize_term(r).con[0]
-  print(f"deserialize_term: {d}")
   wire((root, 0), d)
-  print("DONE")
 
 
 

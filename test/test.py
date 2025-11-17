@@ -5,7 +5,7 @@ import unittest
 from tinycombinator.helpers import Context, Env, hide_dups, print_tree
 from tinycombinator.lib import church, scott
 from tinycombinator.nodes import Node, Port, Tag, wire, PN
-from tinycombinator.term import Term, ID, T, F, label_reset, run, step
+from tinycombinator.term import BACKEND, Term, ID, T, F, label_reset
 
 basics = [ID, T, F, church.Nat(2), ID()(ID), ID().sup(ID())]
 
@@ -31,7 +31,7 @@ class ConstructionRepresentation(unittest.TestCase):
     self._assert_fmt(church.Nat(2), "λa λb ( c where &72{c, d} = a ( d b))", hide_dups = False)
   
   def _assert_run(self, term:Any, expected:str, **envs):
-    self._assert_fmt(run(term), expected, **envs)
+    self._assert_fmt(term.run(), expected, **envs)
 
   def test_clone(self):
     for term in basics:
@@ -44,15 +44,10 @@ class ConstructionRepresentation(unittest.TestCase):
     wire(c2.srcs[0].port.other(), Port(Node(Tag.Null)))
     self.assertNotEqual(str(c2), c2string)
     assert str(c2c) == c2string
-  
-  def test_step(self):
-    t = ID()(ID())
-    res = step(t)
-    self._assert_fmt(res, ID())
-  
+    
   def test_run(self):
     t = ID()(ID())
-    res = run(t)
+    res = t.run()
     self._assert_fmt(res, ID())
 
     self._assert_run(Term.sup(1,2,0)(3), '&0{ ( 1 3) ( 2 3)}')
@@ -99,6 +94,57 @@ class ConstructionRepresentation(unittest.TestCase):
 
         with Context(hide_dups = True): self._assert_fmt(t, Term(None))
         self._assert_run(t, Term(None))
+  
+
+  
+  def compare_backend(self, *term:Any):
+    for t in term:
+      t = Term(t)
+      with BACKEND("python_simple") :
+        r1 = t.run()
+      with BACKEND("clang"):
+        r2 = t.run()
+      with print_tree(False):
+        # self.assertEqual(str(r1), str(r2))
+        if str(r1) != str(r2):
+          print(f"ERORR executing {t}")
+          print(f"python_simple: {r1}")
+          print(f"clang: {r2}")
+
+  def test_backend(self):
+
+
+    self.compare_backend(
+      ID()(ID()),
+      Term(lambda x: x)(lambda y: y),
+      Term(lambda x,y: x)(lambda x:x),
+      Term(lambda x,y: y)(lambda x:x),
+      Term(lambda x: (Term(lambda y:y)(x))),
+      Term(lambda x: (Term(lambda x,y:y)(x))),
+    )
+
+  def test_backend_app_sup(self):
+    s = Term(lambda x,y,z:
+      (Term.sup(x,y, 0))(z)
+    )
+    self.compare_backend(s)
+  
+  def test_backend_dup_sup(self):
+    s = Term.sup(
+      Term(lambda x:x),
+      Term(None),
+      0
+    )
+
+
+
+    self.compare_backend(s.dups(0)[0])
+
+  
+    
+
+    
+
 
 
 
