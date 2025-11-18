@@ -53,6 +53,9 @@ def CCall(name:str, argtypes: list[type], restype: type, *args):
       (lib_path/"hash").write_text(c_hash)
 
     local.lib = ctypes.CDLL(lib_path / "main.so")
+  
+  local.lib.set_debug.argtypes = [Cint]
+  local.lib.set_debug(DEBUG.get())
 
   fun = getattr(local.lib, name)
   fun.argtypes = argtypes
