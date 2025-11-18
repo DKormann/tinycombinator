@@ -14,6 +14,8 @@ class Node:
 
 if __name__ == "__main__":
 
+  DEBUG.set(1)
+
   t = Term(lambda x, y, a: Term.sup(x, y, 0)(a))
 
 
