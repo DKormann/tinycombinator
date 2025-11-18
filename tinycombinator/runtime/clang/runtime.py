@@ -117,7 +117,6 @@ def deserialize_term(rt:CPtr):
       oside = get_side(my_c_port)
       o = go(my_c_port)
       c_port = (encoded_ports if node.tag.negative_polarity(pn) else neg_ports)(o.tag)[oside]
-      # print(f"connect {node} {pn} {node.tag.negative_polarity(pn)=} {oside=} {o} {c_port}")
       wire((node, pn),(o, c_port))
 
     match node.tag:

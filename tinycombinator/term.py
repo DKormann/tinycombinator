@@ -117,7 +117,7 @@ class Term:
     """deep copy of the term"""
     return Term(Port(self.port.node.clone(), self.port.number))
 
-  def run(self, steps:int = int(1e6))->"Term":
+  def run(self, steps:int = 1000)->"Term":
     run : Callable[[Node, int], None] = importlib.import_module("tinycombinator.runtime." + BACKEND.value + ".runtime").run
     wire(Port(Node(Tag.ROOT)), self.port )
     root = Port(Node(Tag.ROOT))

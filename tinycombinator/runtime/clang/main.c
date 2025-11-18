@@ -85,6 +85,14 @@ int get_side(PORT port){
   return port & 1;
 }
 
+int to_s1(PORT port){
+  return port | 1;
+}
+
+int to_s0(PORT port){
+  return (port | 1) ^ 1;
+}
+
 Term* get_term(PORT port, Runtime* rt){
   return &rt->stack[get_loc(port)];
 }
@@ -133,26 +141,26 @@ char* tag_fmt(Tag tag){
 
 char* term_fmt(PORT port, Runtime* rt){
   Term* term = get_term(port, rt);
-  if (DEBUG >= 1){
-    char*buf = malloc(sizeof(char) * 20);
 
-    int l1 = get_loc(term->s[0]);
-    int l2 = get_loc(term->s[1]);
-    int s1 = get_side(term->s[0]);
-    int s2 = get_side(term->s[1]);
-    
-    switch (get_tag(port, rt)){
-      case Dup: case Sup:
-        sprintf(buf, "%s%d: <%d %d> <xor= %d %d>", tag_fmt(get_tag(port, rt)), get_label(port, rt) , l1, s1, l2, s2); break;
-      case ERA: case ROOT: case Null:
-        sprintf(buf, "%s: <%d %d>", tag_fmt(get_tag(port, rt)), l1, s1); break;
-      default:
-        sprintf(buf, "%s: <%d %d> <%d %d>", tag_fmt(term->tag), l1, s1, l2, s2); break;
+  char*buf = malloc(sizeof(char) * 20);
 
-    }
-    return buf;
+  int l1 = get_loc(term->s[0]);
+  int l2 = get_loc(term->s[1]);
+  int s1 = get_side(term->s[0]);
+  int s2 = get_side(term->s[1]);
+  
+  switch (get_tag(port, rt)){
+
+    case Dup:
+      sprintf(buf, "%s%d: <%d %d> <xor= %d %d>", tag_fmt(get_tag(port, rt)), get_label(port, rt) , l1, s1, l2, s2); break;
+    case Sup:
+      sprintf(buf, "%s%d: <%d %d> <%d %d>", tag_fmt(get_tag(port, rt)), get_label(port, rt) , l1, s1, l2, s2); break;
+    case ERA: case ROOT: case Null:
+      sprintf(buf, "%s: <%d %d>", tag_fmt(get_tag(port, rt)), l1, s1); break;
+    default:
+      sprintf(buf, "%s: <%d %d> <%d %d>", tag_fmt(term->tag), l1, s1, l2, s2); break;
   }
-  return tag_fmt(term->tag);
+  return buf;
 }
 
 
@@ -252,6 +260,17 @@ void set_dup_aux(PORT port, PORT a, PORT b, Runtime* rt){
   get_s(port, rt)[1] = a ^ b;
 }
 
+void get_dup_aux(PORT* owner, PORT* b, Runtime* rt){
+  PORT dup = get_port(*owner, rt);
+  PORT xd = get_s(dup, rt)[1];
+  *b = xd ^ *owner;
+  if ((dup & 1) == 1){
+    printf("SAWP\n");
+    PORT tmp = *owner;
+    *owner = *b;
+    *b = tmp;
+  }
+}
 
 
 
@@ -288,46 +307,67 @@ void free_node(PORT port, Runtime* rt){
 }
 
 
-void check_lam_var(PORT lam, Runtime* rt){
 
-
-
-  PORT bindr = get_s(lam, rt)[0];
-  PORT var = get_port(bindr, rt);
-
-  if (get_loc(var) != get_loc(lam) || get_side(var) != 1){
-    error("Lambda variable does not point to the lambda");
+void _check(PORT owner, BST* seen,Runtime* rt){
+  PORT port = get_port(owner, rt);
+  if (get_tag(port, rt) == Dup && get_side(owner) == 0){
+    // this could be a var pointing to dup main
+    return;
   }
-}
 
-void check_node(PORT node, Runtime* rt){
-  switch (get_tag(node, rt)){
-    case Lam: check_lam_var(node, rt); break;
+  if (contains(seen, port)) return;
+  seen = insert(seen, port);
+  switch (get_tag(port, rt)){
+    case Lam:{
+      PORT bindr = get_s(port, rt)[0];
+      PORT var = get_port(bindr, rt);
+      if (get_loc(var) != get_loc(port) || get_side(var) != 1){
+        error("Lambda variable does not point to the lambda");
+      }
+      _check(port | 1, seen, rt);
+    }
+    case Dup:{
+      PORT other = get_s(port, rt)[1] ^ owner;
+      if (get_loc(other) != get_loc(owner)) error("other does not point to dup");
+      if (get_side(other) == get_side(owner)) error("other and owner have the same side");
+      _check(port | 0, seen, rt);
+    }
+    case Sup: case App:{
+      _check(port | 0, seen, rt);
+      _check(port | 1, seen, rt);
+    }
     default: break;
   }
+
 }
 
-void erase(PORT port, Runtime* rt){
+void check_term(PORT term, Runtime* rt){
+  _check(term, NULL, rt);
+}
+
+void erase(PORT owner, Runtime* rt){
+  PORT port = get_port(owner, rt);
+  tree(rt);
   printf("ERASE: %s\n", port_fmt(port, rt));
 
   switch (get_tag(port, rt)){
 
     case Lam:
+      if (get_side(port) == 1){
+        printf("ERASE LAM VAR %s\n", port_fmt(port ^ 1, rt));
+        // set_port(port ^ 1 , new_node(ERA, 0, rt), rt);
+        return;
+      }
+      erase(get_s(port, rt)[1], rt);
+      PORT var = get_s(port, rt)[0];
+      // erase(var, rt);
+      break;
+    case Sup:
       erase(get_s(port, rt)[0], rt);
-
-      PORT var = get_s(port, rt)[1];
-      printf("VAR: %s\n", port_fmt(var, rt));
-      set_port(var, new_node(ERA, 0, rt), rt);
+      erase(get_s(port, rt)[1], rt);
       break;
     default: break;
   }
-
-
-  // LOC loc = get_loc(port);
-  // int side = get_side(port);
-  // if (get_tag(port,rt) && side == 1){
-  //   set_port(new_port(loc, 0), new_node(ERA, 0, rt), rt);
-  // }
 
 
 
@@ -335,24 +375,30 @@ void erase(PORT port, Runtime* rt){
 }
 
 
-void subs(PORT src, PORT dst, Runtime* rt){
-  if (get_tag(src, rt) == Lam && get_side(src) == 1){
-    set_port(new_port(get_loc(src), 0), dst, rt);
+void var_replace(PORT owner, PORT var, Runtime* rt){
+  PORT data = get_port(owner, rt);
+  if (get_tag(data, rt) == Lam && get_side(data) == 1){
+    set_port( to_s0(data), var, rt);
   }
-  if (get_tag(dst, rt) == ERA){
-    erase(src, rt);
-  }else{
-    set_port(dst, src, rt);
-  }
+  set_port(var, data, rt);
+}
+
+
+void dup_replace(PORT owner, PORT a_owner, PORT b_owner, Runtime* rt){
+  PORT dup = get_port(owner, rt);
+
+  PORT other;
+  get_dup_aux(&owner, &other, rt);
+  var_replace(a_owner, owner, rt);
+  var_replace(b_owner, other, rt);
 }
 
 
 void app_lam(PORT owner, PORT app, PORT lam, Runtime* rt){
-  PORT arg = get_s(app, rt)[1];
   PORT var = get_s(lam, rt)[0];
-  subs(arg, var, rt);
-  subs( get_s(lam, rt)[1], owner, rt);
-  check_node(owner, rt);
+  var_replace(app | 1, var, rt);
+  var_replace(lam | 1, owner, rt);
+  check_term(owner, rt);
 }
 
 PORT mk_dup(PORT a, PORT b, PORT t, int label, Runtime* rt){
@@ -387,9 +433,10 @@ void app_sup(PORT owner, PORT app, PORT sup, Runtime* rt){
 }
 
 void app_null(PORT owner, PORT app, PORT null, Runtime* rt){
-  erase(app | 1, rt);
+  erase(owner, rt);
   set_port(owner, null, rt);
 }
+
 
 void dup_sup(PORT owner, PORT dup, PORT sup, Runtime* rt){
 
@@ -397,18 +444,11 @@ void dup_sup(PORT owner, PORT dup, PORT sup, Runtime* rt){
   int dlab = get_label(dup, rt);
   int slab = get_label(sup, rt);
 
-  PORT other = get_s(dup, rt)[1] ^ owner;
-  PORT o1, o2;
-
-  if (get_side(dup)==0) {o1 = owner; o2 = other;}
-  else {o1 = other;o2 = owner;}
-
   PORT s1 = get_s(sup, rt)[0];
   PORT s2 = get_s(sup, rt)[1];
 
   if (dlab == slab){
-    subs(s1, o1, rt);
-    subs(s2, o2, rt);
+    dup_replace(owner, sup | 0, sup | 1, rt);
   }else{
 
     PORT S1 = new_node(Sup, slab, rt);
@@ -417,8 +457,10 @@ void dup_sup(PORT owner, PORT dup, PORT sup, Runtime* rt){
     mk_dup(S1 | 0, S2 | 0, s1, dlab, rt);
     mk_dup(S1 | 1, S2 | 1, s2, dlab, rt);
 
-    subs(S1, o1, rt);
-    subs(S2, o2, rt);
+    PORT other;
+    get_dup_aux(&owner, &other, rt);
+    set_port(owner, S1, rt);
+    set_port(other, S2, rt);
   }
 }
 
@@ -431,12 +473,8 @@ void set_var(PORT target, PORT lam, Runtime* rt){
 
 void dup_lam(PORT owner, PORT dup, PORT lam, Runtime* rt){
 
-  int lab = get_label(dup, rt);
-  PORT other = get_s(dup, rt)[1] ^ owner;
 
-  PORT o1, o2;
-  if (get_side(dup)==0) {o1 = owner; o2 = other;}
-  else {o1 = other;o2 = owner;}
+  int lab = get_label(dup, rt);
 
   PORT var = get_s(lam, rt)[0];
   PORT L1 = new_node(Lam, 0, rt);
@@ -447,13 +485,17 @@ void dup_lam(PORT owner, PORT dup, PORT lam, Runtime* rt){
   set_var(varsup | 0, L1, rt);
   set_var(varsup | 1, L2, rt);
   set_port(var, varsup, rt);
-  
+
+
   PORT bod = get_s(lam, rt)[1];
   mk_dup(L1 | 1, L2 | 1, bod, lab, rt);
 
-  subs(L1, o1, rt);
-  subs(L2, o2, rt);
 
+  PORT other;
+  get_dup_aux(&owner, &other, rt);
+
+  set_port(owner, L1, rt);
+  set_port(other, L2, rt);
 }
 
 
@@ -467,6 +509,8 @@ void dup_null(PORT owner, PORT dup, PORT null, Runtime* rt){
 
 
 int handle_redex(PORT owner, PORT term, Runtime* rt){
+  if (get_port(owner, rt) != term) error("owner and term do not match");
+
   if (rt->steps >= rt->fuel) return 0;
   Tag tag = get_tag(term, rt);
   PORT other = get_s(term, rt)[0];
@@ -486,9 +530,10 @@ int handle_redex(PORT owner, PORT term, Runtime* rt){
       : NULL) : NULL;
 
   if (handler != NULL){
-    if (DEBUG) printf("REDEX: %s <> %s\n", tag_fmt(tag), tag_fmt(otag));
+    if (DEBUG)
+      printf("REDEX: %s <> %s\n", tag_fmt(tag), tag_fmt(otag));
     handler(owner, term, other, rt);
-    rt->fuel ++;
+    rt->steps ++;
     return 1;
   }
   return 0;
@@ -498,16 +543,19 @@ int strong_form = 0;
 BST* strong_form_seen = NULL;
 
 
+// #defMAX_STEPS = 1000;
+
 int reduce(PORT owner, BST* ctx, Runtime* rt){
 
   PORT term = get_port(owner, rt);
   if (get_tag(term, rt) == Lam && get_side(term) == 1) return 0;
 
   int succ = 0;
-  while (handle_redex(owner, term, rt)){
+  while (handle_redex(owner, term, rt)  ){
     succ = 1;
     term = get_port(owner, rt);
-    tree(rt);
+    if (DEBUG) tree(rt);
+    
   }
 
 
@@ -554,7 +602,7 @@ int run(Runtime* rt, int steps){
 
   PORT root = rt->root;
   BST* ctx = insert(NULL, get_loc(root));
-  tree(rt);
+  if (DEBUG) tree(rt);
   reduce(root, ctx, rt);
   return rt->steps;  
     
