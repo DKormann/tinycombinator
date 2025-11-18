@@ -307,20 +307,45 @@ void check_node(PORT node, Runtime* rt){
   }
 }
 
+void erase(PORT port, Runtime* rt){
+  printf("ERASE: %s\n", port_fmt(port, rt));
+
+  switch (get_tag(port, rt)){
+
+    case Lam:
+      erase(get_s(port, rt)[0], rt);
+
+      PORT var = get_s(port, rt)[1];
+      printf("VAR: %s\n", port_fmt(var, rt));
+      set_port(var, new_node(ERA, 0, rt), rt);
+      break;
+    default: break;
+  }
+
+
+  // LOC loc = get_loc(port);
+  // int side = get_side(port);
+  // if (get_tag(port,rt) && side == 1){
+  //   set_port(new_port(loc, 0), new_node(ERA, 0, rt), rt);
+  // }
+
+
+
+  
+}
+
+
 void subs(PORT src, PORT dst, Runtime* rt){
   if (get_tag(src, rt) == Lam && get_side(src) == 1){
     set_port(new_port(get_loc(src), 0), dst, rt);
   }
-  set_port(dst, src, rt);
-}
-
-void erase(PORT port, Runtime* rt){
-  LOC loc = get_loc(port);
-  int side = get_side(port);
-  if (get_tag(port,rt) && side == 1){
-    set_port(new_port(loc, 0), new_node(ERA, 0, rt), rt);
+  if (get_tag(dst, rt) == ERA){
+    erase(src, rt);
+  }else{
+    set_port(dst, src, rt);
   }
 }
+
 
 void app_lam(PORT owner, PORT app, PORT lam, Runtime* rt){
   PORT arg = get_s(app, rt)[1];
@@ -368,7 +393,6 @@ void app_null(PORT owner, PORT app, PORT null, Runtime* rt){
 
 void dup_sup(PORT owner, PORT dup, PORT sup, Runtime* rt){
 
-  DEBUG = 1;
 
   int dlab = get_label(dup, rt);
   int slab = get_label(sup, rt);
@@ -429,6 +453,7 @@ void dup_lam(PORT owner, PORT dup, PORT lam, Runtime* rt){
 
   subs(L1, o1, rt);
   subs(L2, o2, rt);
+
 }
 
 
@@ -443,35 +468,25 @@ void dup_null(PORT owner, PORT dup, PORT null, Runtime* rt){
 
 int handle_redex(PORT owner, PORT term, Runtime* rt){
   if (rt->steps >= rt->fuel) return 0;
-  void (*handler)(PORT, PORT, PORT, Runtime*) = NULL;
-
   Tag tag = get_tag(term, rt);
   PORT other = get_s(term, rt)[0];
   Tag otag = get_tag(other, rt);
   if (otag == Lam && get_side(other) == 1) return 0;
 
-  switch (tag){
-    case App:
-      switch (otag){
-        case Lam: handler = app_lam; break;
-        case Sup: handler = app_sup; break;
-        case Null: handler = app_null; break;
-        default: break;
-      }
-      break;
-    case Dup:
-      switch (otag){
-        case Lam: handler = dup_lam; break;
-        case Sup: handler = dup_sup; break;
-        case Null: handler = dup_null; break;
-        default: break;
-      }
-      break;
-    default: break;
-  }
-  if (handler != NULL){
+  void(*handler)(PORT, PORT, PORT, Runtime*) = 
+    (tag == App) ?
+      ( otag == Lam ? app_lam
+      : otag == Sup ? app_sup
+      : otag == Null ? app_null
+      : NULL)
+    :(tag == Dup) ?
+      ( otag == Lam ? dup_lam
+      : otag == Sup ? dup_sup
+      : otag == Null ? dup_null
+      : NULL) : NULL;
 
-    printf("REDEX: %s <> %s\n", tag_fmt(tag), tag_fmt(otag));
+  if (handler != NULL){
+    if (DEBUG) printf("REDEX: %s <> %s\n", tag_fmt(tag), tag_fmt(otag));
     handler(owner, term, other, rt);
     rt->fuel ++;
     return 1;
@@ -483,7 +498,7 @@ int strong_form = 0;
 BST* strong_form_seen = NULL;
 
 
-int reduce(PORT owner, Runtime* rt){
+int reduce(PORT owner, BST* ctx, Runtime* rt){
 
   PORT term = get_port(owner, rt);
   if (get_tag(term, rt) == Lam && get_side(term) == 1) return 0;
@@ -492,28 +507,44 @@ int reduce(PORT owner, Runtime* rt){
   while (handle_redex(owner, term, rt)){
     succ = 1;
     term = get_port(owner, rt);
-    // printf("REDEX\n");
-    // tree(rt);
+    tree(rt);
   }
+
 
   Tag tag = get_tag(term, rt);
 
   char * stag = port_fmt(term, rt);
 
   switch (tag){
-    case Lam:
-      reduce(new_port(get_loc(term), 1), rt);
+    case App:{
+      LOC loc = get_loc(term);
+      if (reduce(new_port(loc, 0), ctx, rt)) succ |= reduce(owner, ctx, rt);
+      if (ctx != NULL){
+        reduce(new_port(loc, 1), ctx, rt);
+      }
       break;
-    case Dup:
-      if (reduce(new_port(get_loc(term), 0), rt))reduce(owner, rt);
+    }
+    case Dup:{ 
+      LOC duploc = get_loc(term);
+      if (ctx != NULL){  
+        if (contains(ctx, duploc)) return 0;
+        insert(ctx, duploc);
+      }
+      if (reduce(new_port(duploc, 0), ctx, rt)) reduce(owner, ctx, rt);
+      break;
+    }
+    case Lam:
+      reduce(new_port(get_loc(term), 1), ctx, rt);
       break;
     case Sup:
-      // reduce(new_port(get_loc(term), 0), rt);
-      // reduce(new_port(get_loc(term), 1), rt); 
+      reduce(new_port(get_loc(term), 0), ctx, rt);
+      reduce(new_port(get_loc(term), 1), ctx, rt); 
+      break;
     default: break;
   }
   return succ;
 }
+
 
 
 int run(Runtime* rt, int steps){
@@ -522,12 +553,9 @@ int run(Runtime* rt, int steps){
   rt->steps = 0;
 
   PORT root = rt->root;
-
-  // tree(rt);
-
-  reduce(root, rt);
-  printf("DON\n");
-
+  BST* ctx = insert(NULL, get_loc(root));
+  tree(rt);
+  reduce(root, ctx, rt);
   return rt->steps;  
     
 }
