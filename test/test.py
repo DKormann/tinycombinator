@@ -94,9 +94,7 @@ class ConstructionRepresentation(unittest.TestCase):
 
         with Context(hide_dups = True): self._assert_fmt(t, Term(None))
         self._assert_run(t, Term(None))
-  
 
-  
   def compare_backend(self, *term:Any):
     for t in term:
       t = Term(t)
@@ -138,8 +136,10 @@ class ConstructionRepresentation(unittest.TestCase):
     self.compare_backend(Term(lambda x:x).dups(0)[0])
     self.compare_backend(Term(lambda x,y:x).dups(0)[0])
 
-    # assert False
-  
+
+  def test_backend_bigger(self):
+    with BACKEND("clang"):
+      self.test_scott()
 
   
     
