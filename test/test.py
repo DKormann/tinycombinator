@@ -105,15 +105,13 @@ class ConstructionRepresentation(unittest.TestCase):
       with BACKEND("clang"):
         r2 = t.run()
       with print_tree(False):
-        # self.assertEqual(str(r1), str(r2))
         if str(r1) != str(r2):
           print(f"ERORR executing {t}")
           print(f"python_simple: {r1}")
           print(f"clang: {r2}")
+          raise AssertionError("Error executing term")
 
   def test_backend(self):
-
-
     self.compare_backend(
       ID()(ID()),
       Term(lambda x: x)(lambda y: y),
@@ -130,26 +128,20 @@ class ConstructionRepresentation(unittest.TestCase):
     self.compare_backend(s)
   
   def test_backend_dup_sup(self):
-    s = Term.sup(
-      Term(lambda x:x),
-      Term(None),
-      0
-    )
-
-
-
+    s = Term.sup(Term(lambda x:x), Term(None),0)
     self.compare_backend(s.dups(0)[0])
+    self.compare_backend(s.dups(1)[0])
+    self.compare_backend(s.dups(0)[1])
+    self.compare_backend(s.dups(1)[1])
+  
+  def test_backend_lam_dup(self):
+    self.compare_backend(Term(lambda x:x).dups(0)[0])
+    self.compare_backend(Term(lambda x,y:x).dups(0)[0])
+
+    # assert False
+  
 
   
-    
-
-    
-
-
-
-
-
-
     
 
 if __name__ == "__main__":
