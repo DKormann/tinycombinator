@@ -14,7 +14,7 @@ class Node:
 
 if __name__ == "__main__":
 
-  DEBUG.set(1)
+  # DEBUG.set(1)
 
   t = Term(lambda x, y, a: Term.sup(x, y, 0)(a))
 
@@ -68,5 +68,19 @@ if __name__ == "__main__":
   print(t.run())
 
   with BACKEND("clang"):
+    print(t.run(), "\n\n\n\n")
+
+
+
+
+  # t = ID()(ID())
+
+  t = Term(lambda x:x)(Term(lambda y:y))
+
+  print(t)
+
+  print(t.run())
+
+  with BACKEND("clang"), DEBUG(True):
     print(t.run(), "\n\n\n\n")
 
