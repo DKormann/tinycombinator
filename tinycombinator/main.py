@@ -84,3 +84,6 @@ if __name__ == "__main__":
       (Term.sup(x,y, 0))(z)
     )
   compare(t)
+
+  
+  compare(scott.to_z()(scott.nat(2)))
