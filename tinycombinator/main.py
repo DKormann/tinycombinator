@@ -12,9 +12,24 @@ class Node:
 
 
 
+
+
 if __name__ == "__main__":
 
-  # DEBUG.set(1)
+  def compare(t:Term):
+    t = Term(t)
+    print(t)
+    with BACKEND("python_simple"): p = t.run()
+    with DEBUG(1), BACKEND("clang"):r = t.run()
+    if str(p) != str(r):
+      print(p)
+      print(r)
+      raise RuntimeError("DONT MATCH")
+    print("OK\n\n\n\n")
+
+
+
+  DEBUG.set(1)
 
   t = Term(lambda x, y, a: Term.sup(x, y, 0)(a))
 
@@ -25,11 +40,7 @@ if __name__ == "__main__":
       0
     ).dups(0)[0]
 
-  print(t)
-  with BACKEND("clang"):
-    print(t.run(), "\n\n\n\n")
-
-
+  compare(t)
 
   t = Term.sup(
       Term(lambda x:x),
@@ -37,50 +48,39 @@ if __name__ == "__main__":
       0
     ).dups(1)[0]
 
-  print(t)
-  print(t.run())
-
-  with BACKEND("clang"):
-    print(t.run(), "\n\n\n\n")
+  compare(t)
   
-
-
   t = Term(
     lambda x, y: x(y)
   ).dups(0)[0]
 
-  print(t)
+  compare(t)
 
-  print(t.run())
-
-  with BACKEND("clang"):
-    print(t.run(), "\n\n\n\n")
-
-
-
+  compare(Term(lambda x,y:x))
 
   t = Term(
     lambda x,y:x
   ).dups(0)[0]
 
-  print(t)
-
-  print(t.run())
-
-  with BACKEND("clang"):
-    print(t.run(), "\n\n\n\n")
+  compare(t)
 
 
-
-
-  # t = ID()(ID())
 
   t = Term(lambda x:x)(Term(lambda y:y))
 
-  print(t)
+  compare(t)
 
-  print(t.run())
+  from tinycombinator.lib import scott
 
-  with BACKEND("clang"), DEBUG(True):
-    print(t.run(), "\n\n\n\n")
+  t = scott.dec()(scott.nat(2))
 
+
+  compare(t)
+
+
+
+
+  t = Term(lambda x,y,z:
+      (Term.sup(x,y, 0))(z)
+    )
+  compare(t)
