@@ -22,6 +22,14 @@ def Y_comb()->Term:
 def inc(): return Term(lambda t, s, z: s(t))
 def dec(): return Term(lambda t: t(lambda p: p, t))
 
+def to_z(): return Y_comb()(Term(
+  lambda self, x:
+    x(
+      lambda p: self(p),
+      x
+    )
+))
+
 # print(inc())
 # print(dec())
 

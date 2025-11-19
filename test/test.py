@@ -76,6 +76,14 @@ class ConstructionRepresentation(unittest.TestCase):
       scott.nat(1),
       hide_dups = True
     )
+
+    self._assert_run(
+      scott.to_z()(scott.nat(2)),
+      scott.nat(0),
+      hide_dups = True
+    )
+
+
   
   def test_circular(self):
 
