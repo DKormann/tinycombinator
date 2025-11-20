@@ -49,42 +49,18 @@ def redex(node: Node):
   return True
 
 
-@functools.lru_cache(maxsize=None)
-
 
 def step(node: Node)->bool:
-  seen = set()
-  def go(node):
-    if node in seen: return False
-    seen.add(node)
-    if redex(node): return True
-    for port in {
-      Tag.App: [PN.MAIN, PN.AUX1],
-      Tag.Dup: [PN.MAIN, PN.AUX1],
-      Tag.Sup: [PN.AUX1, PN.AUX2],
-      Tag.Lam: [PN.AUX2],
-    }[node.tag]:
-      if go(node.con[port].node): return True
-    return False
-  
+  for x in node.walk():
+    if redex(x): return True
 
 
-  # match node.tag:
-  #   case Tag.App:
-  #     return step(node.con[PN.MAIN].node) or step(node.con[PN.AUX1].node)
-  #   case Tag.Dup:
-  #     return step(node.con[PN.MAIN].node)
-  #   case Tag.Lam:
-  #     return step(node.con[PN.AUX2].node)
-  #   case Tag.Sup:
-  #     return step(node.con[PN.AUX1].node) or step(node.con[PN.AUX2].node)
 
 
 def run(root: Node, steps: int = None):
   """reduces inplace"""
   assert root.tag == Tag.ROOT, f"expected ROOT, got {Node.tag}"
   if steps is None: steps = int(1e9)
-  print(f"STARTING WITH {steps} STEPS")
   for _ in range(steps):
     if not step(root.con[PN.MAIN].node): break
 

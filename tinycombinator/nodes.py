@@ -56,16 +56,13 @@ class Node:
 
   def __post_init__(self): assert isinstance(self.tag, Tag)
 
-  def walk(self):
-    seen = {self}
-    todo = [self]
-    while todo:
-      term = todo.pop()
-      yield term
-      for s in term.con:
-        if s and s.node and s.node not in seen:
-          seen.add(s.node)
-          todo.append(s.node)
+  def walk(self, seen = None):
+    if seen is None: seen = set()
+    seen.add(self)
+    yield self
+    for port in self.con:
+      if port is None or port.node in seen: continue
+      yield from port.node.walk(seen)
   
   def clone(self):
     cache = {node: Node(node.tag, node.label, node.value) for node in self.walk()}

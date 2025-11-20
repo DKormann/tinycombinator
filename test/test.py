@@ -7,6 +7,10 @@ from tinycombinator.lib import church, scott
 from tinycombinator.nodes import Node, Port, Tag, wire, PN
 from tinycombinator.term import BACKEND, Term, ID, T, F, label_reset
 
+sup_ex = Term.sup(Term(lambda x:x), Term(None),0)
+
+
+
 basics = [ID, T, F, church.Nat(2), ID()(ID), ID().sup(ID())]
 
 class ConstructionRepresentation(unittest.TestCase):
@@ -14,23 +18,27 @@ class ConstructionRepresentation(unittest.TestCase):
   def _assert_fmt(self, term:Any, expected:str, **envs):
     with print_tree(False), Context(**envs):
       if isinstance(expected, Term): expected = str(expected)
+      if callable(expected): expected = str(Term(expected))
+
       self.assertEqual(str(Term(term)), expected)
   
   def test_fmt(self):
-
     self._assert_fmt(ID, "λa a")
     self._assert_fmt(ID(), "λa a")
     self._assert_fmt(T, "λa λ a")
     self._assert_fmt(T(), "λa λ a")
     self._assert_fmt(F, "λ λa a")
-
+    self._assert_fmt(sup_ex.dups(0)[0], "a where &0{a, b} = &0{ λc c NULL}")
+    self._assert_fmt(sup_ex.dups(0)[1], "b where &0{a, b} = &0{ λc c NULL}")
+    self._assert_fmt(sup_ex.dups(1)[0], "a where &1{a, b} = &0{ λc c NULL}")
     self._assert_fmt(church.Nat(0), "λ λa a")
     self._assert_fmt(church.Nat(1), "λa λb ( a b)")
     self._assert_fmt(church.Nat(2), "λa λb ( a ( a b))", hide_dups = True)
     label_reset()
-    self._assert_fmt(church.Nat(2), "λa λb ( c where &72{c, d} = a ( d b))", hide_dups = False)
+    self._assert_fmt(church.Nat(2), "λa λb ( d where &72{c, d} = a ( c b))", hide_dups = False)
   
   def _assert_run(self, term:Any, expected:str, **envs):
+
     self._assert_fmt(term.run(), expected, **envs)
 
   def test_clone(self):
@@ -46,11 +54,17 @@ class ConstructionRepresentation(unittest.TestCase):
     assert str(c2c) == c2string
     
   def test_run(self):
-    t = ID()(ID())
-    res = t.run()
-    self._assert_fmt(res, ID())
 
+    self._assert_run(ID()(ID()), ID())
     self._assert_run(Term.sup(1,2,0)(3), '&0{ ( 1 3) ( 2 3)}')
+
+    self._assert_run(sup_ex.dups(0)[0], "λa a")
+    self._assert_run(sup_ex.dups(0)[1], "NULL")
+    self._assert_run(sup_ex.dups(1)[0], "&0{ λa a NULL}")
+
+    self._assert_run(Term(lambda x,y:x).dups(0)[0], Term(lambda x,y:x))
+    self._assert_run(Term(lambda x,y:y).dups(0)[0], Term(lambda x,y:y))
+    self._assert_run(Term(lambda x,y:y).dups(0)[0].dups(1)[1], Term(lambda x,y:y))
 
     self._assert_run(
       church.Nat(2)(church.Nat(2)),
@@ -63,6 +77,12 @@ class ConstructionRepresentation(unittest.TestCase):
       church.Nat(3),
       hide_dups = True
     )
+
+    self._assert_run(Term(lambda x,y: x)(lambda x:x), lambda x,y:y)
+    self._assert_run(Term(lambda x: (Term(lambda y:y)(x))), lambda x:x)
+    self._assert_run(Term(lambda x: (Term(lambda x,y:y)(x))), lambda x,y:y)
+    self._assert_run(Term(lambda x,y,z:(Term.sup(x,y, 0))(z)), "λa λb λc &0{ ( a d where &0{d, e} = c) ( b e)}")
+
 
   def test_scott(self):
     self._assert_run(
@@ -101,54 +121,17 @@ class ConstructionRepresentation(unittest.TestCase):
         with Context(hide_dups = True): self._assert_fmt(t, Term(None))
         self._assert_run(t, Term(None))
 
-  # def compare_backend(self, *term:Any):
-  #   for t in term:
-  #     t = Term(t)
-  #     with BACKEND("python_simple") :
-  #       r1 = t.run()
-  #     with BACKEND("clang"):
-  #       r2 = t.run()
-  #     with print_tree(False):
-  #       if str(r1) != str(r2):
-  #         print(f"ERORR executing {t}")
-  #         print(f"python_simple: {r1}")
-  #         print(f"clang: {r2}")
-  #         raise AssertionError("Error executing term")
-
-  # def test_backend(self):
-  #   self.compare_backend(
-  #     ID()(ID()),
-  #     Term(lambda x: x)(lambda y: y),
-  #     Term(lambda x,y: x)(lambda x:x),
-  #     Term(lambda x,y: y)(lambda x:x),
-  #     Term(lambda x: (Term(lambda y:y)(x))),
-  #     Term(lambda x: (Term(lambda x,y:y)(x))),
-  #   )
-
-  # def test_backend_app_sup(self):
-  #   s = Term(lambda x,y,z:
-  #     (Term.sup(x,y, 0))(z)
-  #   )
-  #   self.compare_backend(s)
+  def _test_backend(self, backend:str):
+    with BACKEND(backend):
+      self.test_fmt()
+      self.test_run()
+      self.test_circular()
+      self.test_scott()
   
-  # def test_backend_dup_sup(self):
-  #   s = Term.sup(Term(lambda x:x), Term(None),0)
-  #   self.compare_backend(s.dups(0)[0])
-  #   self.compare_backend(s.dups(1)[0])
-  #   self.compare_backend(s.dups(0)[1])
-  #   self.compare_backend(s.dups(1)[1])
-  
-  # def test_backend_lam_dup(self):
-  #   self.compare_backend(Term(lambda x:x).dups(0)[0])
-  #   self.compare_backend(Term(lambda x,y:x).dups(0)[0])
+  def test_clang(self):
+    self._test_backend("clang")
+      
 
-
-  # def test_backend_bigger(self):
-  #   with BACKEND("clang"):
-  #     self.test_scott()
-
-  
-    
 
 if __name__ == "__main__":
   unittest.main()

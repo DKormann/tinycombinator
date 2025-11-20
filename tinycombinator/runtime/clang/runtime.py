@@ -71,6 +71,7 @@ def serialize_node(root:Node)->CPtr:
   rt = CCall("new_runtime", [], CPtr)
   cache = {}
   for node in root.walk():
+
     port = CCall("new_node", [Cint, Cint, CPtr], Cint, node.tag.value, node.label, rt)
     cache[node] = get_loc(port)
   
@@ -98,6 +99,7 @@ def serialize_node(root:Node)->CPtr:
       case Tag.Prim:
         CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], 0),
         make_port(node.value, 0) if isinstance(node.value, int) else make_port(node.value.value, 1), rt)
+
       case _:
         for i in range(len(encoded_ports(node.tag))): c_connect(i)
 
@@ -110,18 +112,14 @@ def deserialize_term(rt:CPtr):
   def go(port:PORT)->Node:
     loc = get_loc(port)
     if loc in cache: return cache[loc]
-
     tag = CCall("get_tag", [PORT, CPtr], Cint, port, rt)
-
     label= CCall("get_label", [PORT, CPtr], Cint, port, rt)
     node = Node(Tag(tag), label)
     cache[loc] = node
-
+    get_port = lambda s: CCall("get_port", [PORT, CPtr], PORT, make_port(loc, s), rt)
     def connect(side:int, pn:PN):
-
-      my_c_port = CCall("get_port", [PORT, CPtr], PORT, make_port(loc, side), rt)
-      oside = get_side(my_c_port)
-      o = go(my_c_port)
+      oside = get_side(get_port(side))
+      o = go(get_port(side))
       c_port = (encoded_ports if node.tag.negative_polarity(pn) else neg_ports)(o.tag)[oside]
       wire((node, pn),(o, c_port))
 
@@ -129,7 +127,11 @@ def deserialize_term(rt:CPtr):
       case Tag.Dup:
         connect(0, PN.MAIN)
         """TODO?"""
-      case Tag.Prim: raise ValueError("Prim not supported")
+      case Tag.Prim:
+        data = get_port(0)
+        val = get_loc(data)
+        if get_side(data): node.value = MathOps(val)
+        else: node.value = val
       case Tag.ERA: pass
       case _:
         for i in enumerate(encoded_ports(node.tag)): connect(*i)
@@ -143,6 +145,7 @@ def run(root:Node, steps:int):
   r = serialize_node(root)
   CCall("run", [CPtr, Cint], Cint, r, steps)
   d = deserialize_term(r).con[0]
+  assert d is not None
   wire((root, 0), d)
 
 
