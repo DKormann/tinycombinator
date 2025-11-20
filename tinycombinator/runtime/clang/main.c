@@ -231,9 +231,7 @@ LOC get_root(Runtime* rt){
   return rt->root;
 }
 
-
 void set_port(PORT port, PORT content, Runtime* rt){
-  printf("set port %d %d %d %d\n", port>>1, port & 1, content>>1, content & 1);
   get_s(port, rt)[get_side(port)] = content;
 }
 
@@ -243,13 +241,10 @@ PORT get_port(PORT port, Runtime* rt){
   return node.s[port & 1];
 }
 
-
 void set_dup_aux(PORT port, PORT a, PORT b, Runtime* rt){
-  printf("set dup aux %s\n", port_fmt(port, rt));
   Tag duptag = get_tag(port, rt);
   if (duptag != Dup) printf("cannot set aux ports of non-dup %s\n", tag_fmt(port));
   get_s(port, rt)[1] = a ^ b;
-  printf("set dup aux %d\n", get_s(port, rt)[1] >> 1);
 }
 
 void get_dup_aux(PORT* owner, PORT* b, Runtime* rt){
@@ -349,13 +344,11 @@ void _check(PORT owner, BST* seen,Runtime* rt){
       _check(port ^ 1, seen, rt);
       break;
     }
-    // default: break;
     case Null: break;
     case ERA: break;
     case ROOT: break;
     case Prim: break;
     case Freed:
-      // error("Freed term found");
       tree(rt);
       printf(RED "Freed term found: %s\n" RESET, port_fmt(port, rt));
       exit(1);
@@ -372,38 +365,33 @@ void check_term(Runtime* rt){
 void erase(PORT owner, Runtime* rt){
   PORT port = get_port(owner, rt);
 
-  printf("erase %d,%d -> %s\n", owner >> 1, owner &1, port_fmt(port, rt));
+  if (DEBUG>=2) printf("erase %d,%d -> %s\n", owner >> 1, owner &1, port_fmt(port, rt));
   switch (get_tag(port, rt)){
-
     case Lam:{
-      set_port(get_s(port, rt)[0], new_node(ERA, 0, rt), rt);
-      printf("ERAS BOD\n");
-      erase(to_s1(port), rt);
+      if (port & 1){
+        set_port(port ^ 1, new_node(ERA, 0, rt), rt);
+      }else{
+        set_port(get_s(port, rt)[0], new_node(ERA, 0, rt), rt);
+        erase(to_s1(port), rt);
+      }
       break;
     }
     case Dup:{
       PORT * dup_s = get_s(port, rt);
       PORT other = dup_s[1] ^ owner;
       if (get_tag(other, rt) == ERA){
-        printf("owner: %s\n", port_fmt(owner, rt));
-        printf("other: %s\n", port_fmt(other, rt));
-        printf("ERASE FULL DUP\n");
-
         erase(dup_s[0], rt);
         free_node(port, rt);
       }else{
-        PORT era = new_node(ERA, 0, rt);
-        printf("era: %s\n", port_fmt(era, rt));
-        dup_s[1] = other ^ era;
-        printf("ERASE DUP AUX owner: %s other: %s\n", port_fmt(owner, rt), port_fmt(other, rt));
-        printf("dup_s[1]: %d %d\n", dup_s[1] >> 1, dup_s[1] & 1);
+        dup_s[1] = other ^ new_node(ERA, 0, rt);
       }
       break;
     }
+    case App:
     case Sup:{
-
-      erase(get_s(port, rt)[0], rt);
-      erase(get_s(port, rt)[1], rt);
+      free_node(port, rt);
+      erase(to_s0(port), rt);
+      erase(to_s1(port), rt);
       break;
     }
     default: break;
@@ -418,14 +406,12 @@ void move(PORT port, PORT owner, Runtime* rt){
   Term* tar = get_term(content,rt);
 
   if (get_tag(port, rt) == ERA) {
-    printf("lets erase %s\n", port_fmt(owner, rt));
+    if (DEBUG>=2) printf("lets erase %s\n", port_fmt(owner, rt));
     erase(owner, rt);
     return;
   }
   if (tar->tag == Lam && get_side(content) == 1) tar->s[0] = port;
-  if (tar->tag == Dup) {
-    printf("DUP update\n");
-    tar->s[1] ^= owner ^ port;}
+  if (tar->tag == Dup) tar->s[1] ^= owner ^ port;
   set_port(port, content, rt);
 
 }
@@ -433,22 +419,15 @@ void move(PORT port, PORT owner, Runtime* rt){
 void app_lam(PORT owner, PORT app, PORT lam, Runtime* rt){
   PORT var = get_s(lam, rt)[0];
   PORT arg = get_port(app | 1, rt);
-  printf("arg: %d\n", (get_term(arg,rt)->s[1]) >> 1);
-  // printf("app_lam var: %s arg: %s\n", port_fmt(var, rt), port_fmt(arg, rt));
   move(var, app | 1, rt);
   move(owner, lam | 1, rt);
 }
-
-
 
 PORT mk_dup(PORT a, PORT b, PORT owner, int label, Runtime* rt){
   PORT dup = new_node(Dup, label, rt);
   set_dup_aux(dup, a, b, rt);
   set_port(a, new_port(get_loc(dup), 0), rt);
   set_port(b, new_port(get_loc(dup), 1), rt);
-
-  
-
   move(dup, owner, rt);
   return new_port(get_loc(dup), 0);
 }
@@ -456,12 +435,8 @@ PORT mk_dup(PORT a, PORT b, PORT owner, int label, Runtime* rt){
 
 void app_sup(PORT owner, PORT app, PORT sup, Runtime* rt){
 
-
-  printf("app_sup %s\n", port_fmt(owner, rt));
   PORT app1 = new_node(App, 0, rt);
   PORT app2 = new_node(App, 0, rt);
-
-  printf("app1: %s\n", port_fmt(app1, rt));
 
   move(app1 | 0, sup | 0, rt);
   move(app2 | 0, sup | 1, rt);
@@ -491,17 +466,11 @@ void dup_sup(PORT owner, PORT dup, PORT sup, Runtime* rt){
   int dlab = get_label(dup, rt);
   int slab = get_label(sup, rt);
 
-  printf("owner: %s\n", port_fmt(owner, rt));
-
   PORT other;
   get_dup_aux(&owner, &other, rt);
 
   if (dlab == slab){
-    printf("DUP SUP SAME LABEL\n");
-
-    printf("owner: %s\n", port_fmt(owner, rt));
-    printf("other: %s\n", port_fmt(other, rt));
-
+    if (DEBUG) printf("DUP SUP SAME LABEL\n");
     move(owner, sup | 0, rt);
     move(other, sup | 1, rt);
 
@@ -522,12 +491,8 @@ void set_var(PORT target, PORT lam, Runtime* rt){
   set_port(lam | 0, target, rt);
 }
 
-
 void erase_lam(PORT lam, Runtime* rt){
-  // set_port(to_s0(lam), new_node(Null, 0, rt), rt);
-
   PORT var = get_s(lam, rt)[0];
-  printf("var: %s\n", port_fmt(var, rt));
   set_port(var, new_node(Null, 0, rt), rt);
   erase(to_s1(lam), rt);
 }
@@ -538,13 +503,9 @@ void dup_lam(PORT owner, PORT dup, PORT lam, Runtime* rt){
   get_dup_aux(&owner, &other, rt);
 
   Term* lam_term = get_term(lam, rt);
-
   PORT L2 = new_node(Lam, 0, rt);
   PORT L1 = new_node(Lam, 0, rt);
-
   PORT bod = lam_term->s[1];
-
-
   PORT DUP = mk_dup(L1 | 1, L2 | 1, lam | 1, lab, rt);
 
   if (get_tag(lam_term->s[0], rt) == ERA){
@@ -553,34 +514,18 @@ void dup_lam(PORT owner, PORT dup, PORT lam, Runtime* rt){
     set_port(L2 | 0, new_node(ERA, 0, rt), rt);
 
   }else{
-
     PORT varsup = new_node(Sup, lab, rt);
-    
     set_port(lam_term->s[0], varsup, rt);
     
     set_var(varsup | 0, L1, rt);
     set_var(varsup | 1, L2, rt);
   }
 
-  printf("L1: %s\n", port_fmt(L1, rt));
-  printf("L2: %s\n", port_fmt(L2, rt));
-
-
-  if (get_tag(owner, rt) == ERA) {
-    printf("lets erase L1\n");
-    erase_lam(L1, rt);
-  }
+  if (get_tag(owner, rt) == ERA) erase_lam(L1, rt);
   else set_port(owner, L1, rt);
 
-  if (get_tag(other, rt) == ERA) {
-    printf("lets erase L2\n");
-    erase_lam(L2, rt);
-  }
+  if (get_tag(other, rt) == ERA) erase_lam(L2, rt);
   else set_port(other, L2, rt);
-
-
-  printf("owner: %s\n", port_fmt(owner, rt));
-  printf("other: %s\n", port_fmt(other, rt));
 }
 
 void dup_null(PORT owner, PORT dup, PORT null, Runtime* rt){
@@ -588,6 +533,20 @@ void dup_null(PORT owner, PORT dup, PORT null, Runtime* rt){
   set_port(other, null, rt);
   set_port(owner, new_node(Null, 0, rt), rt);
 }
+
+void dup_prim(PORT owner, PORT dup, PORT prim, Runtime* rt){
+  PORT other = get_s(dup, rt)[1] ^ owner;
+  PORT prim2 = new_node(Prim, get_label(prim, rt), rt);
+  set_port(prim2 | 0, get_port(prim | 0, rt), rt);
+  set_port(owner, prim, rt);
+  set_port(other, prim2, rt);
+}
+
+void app_prim(PORT owner, PORT app, PORT prim, Runtime* rt){
+  error("app prim not supported");
+}
+
+
 
 int handle_redex(PORT owner, PORT term, Runtime* rt){
   if (get_port(owner, rt) != term) error("owner and term do not match");
@@ -603,11 +562,13 @@ int handle_redex(PORT owner, PORT term, Runtime* rt){
       ( otag == Lam ? app_lam
       : otag == Sup ? app_sup
       : otag == Null ? app_null
+      // : otag == Prim ? app_prim
       : NULL)
     :(tag == Dup) ?
       ( otag == Lam ? dup_lam
       : otag == Sup ? dup_sup
       : otag == Null ? dup_null
+      : otag == Prim ? dup_prim
       : NULL) : NULL;
 
   if (handler != NULL){
@@ -623,8 +584,6 @@ int handle_redex(PORT owner, PORT term, Runtime* rt){
 
 int step(PORT owner, BST* seen, Runtime* rt){
 
-  // printf("step %s\n", port_fmt(owner, rt));
-
   if (contains(seen, owner)){
 
     return 0;
@@ -633,20 +592,13 @@ int step(PORT owner, BST* seen, Runtime* rt){
   PORT term = get_port(owner, rt);
 
   if (handle_redex(owner, term, rt)){
-    printf("SUCC\n");
     return 1;
   }
 
   switch (get_tag(term, rt)){
-    case App:  case Sup:{
-      return step(term ^ 0, seen, rt) || step(term ^ 1, seen, rt);
-    }
-    case Dup:{
-      return step((term >> 1 << 1), seen, rt);
-    }
-    case Lam:{
-      return step((term >> 1 << 1) | 1, seen, rt);
-    }
+    case App:  case Sup: return step(to_s0(term), seen, rt) || step(to_s1(term), seen, rt);
+    case Dup: return step(to_s0(term), seen, rt);
+    case Lam: return step(to_s1(term), seen, rt);
     case ROOT:{
       return step(term, seen, rt);
     }
@@ -656,8 +608,7 @@ int step(PORT owner, BST* seen, Runtime* rt){
 
 void reduce(PORT term, BST* seen, Runtime* rt){
   while (step(term, insert(NULL, -1), rt)){
-    tree(rt);
-
+    if (DEBUG >= 2) tree(rt);
   }
 }
 
