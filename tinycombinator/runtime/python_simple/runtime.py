@@ -1,3 +1,5 @@
+import functools
+from typing import Generator, List
 from tinycombinator.nodes import Node, Port, Tag, wire, PN, MathOps
 from tinycombinator.helpers import debug
 from tinycombinator.term import Node
@@ -35,7 +37,7 @@ def commute(dup: Node, lam: Node)->Node:
 
 def redex(node: Node):
   if node.con[PN.MAIN].number != PN.MAIN: return False
-  other = node.con[0].node
+  other = node.con[PN.MAIN].node
   match node.tag, other.tag:
     case (Tag.Null, Tag.Dup) | (Tag.Prim, Tag.Dup) | (Tag.ERA, Tag.Sup): erase(node, other)
     case (Tag.Dup, Tag.Lam) | (Tag.App, Tag.Sup): commute(node, other)
@@ -46,18 +48,45 @@ def redex(node: Node):
     case _: return False
   return True
 
-def step(node: Node):
-  for port in node.walk():
-    if port and redex(port): return True
+
+@functools.lru_cache(maxsize=None)
+
+
+def step(node: Node)->bool:
+  seen = set()
+  def go(node):
+    if node in seen: return False
+    seen.add(node)
+    if redex(node): return True
+    for port in {
+      Tag.App: [PN.MAIN, PN.AUX1],
+      Tag.Dup: [PN.MAIN, PN.AUX1],
+      Tag.Sup: [PN.AUX1, PN.AUX2],
+      Tag.Lam: [PN.AUX2],
+    }[node.tag]:
+      if go(node.con[port].node): return True
+    return False
   
+
+
+  # match node.tag:
+  #   case Tag.App:
+  #     return step(node.con[PN.MAIN].node) or step(node.con[PN.AUX1].node)
+  #   case Tag.Dup:
+  #     return step(node.con[PN.MAIN].node)
+  #   case Tag.Lam:
+  #     return step(node.con[PN.AUX2].node)
+  #   case Tag.Sup:
+  #     return step(node.con[PN.AUX1].node) or step(node.con[PN.AUX2].node)
+
 
 def run(root: Node, steps: int = None):
   """reduces inplace"""
   assert root.tag == Tag.ROOT, f"expected ROOT, got {Node.tag}"
   if steps is None: steps = int(1e9)
+  print(f"STARTING WITH {steps} STEPS")
   for _ in range(steps):
-
-    if not step(root): break
+    if not step(root.con[PN.MAIN].node): break
 
 
 

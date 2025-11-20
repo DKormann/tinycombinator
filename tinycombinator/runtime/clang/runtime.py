@@ -47,7 +47,10 @@ def CCall(name:str, argtypes: list[type], restype: type, *args):
     c_hash = hashlib.sha256(c_code.encode()).hexdigest()
     if (not (lib_path / "hash").exists()) or (c_hash != (lib_path/"hash").read_text()):
       debug("compiling ... ")
-      if os.system(f"clang -shared -o {lib_path/ 'main.so'} {c_path}"):
+      # Remove -fsanitize=address for now due to macOS DYLD_INSERT_LIBRARIES requirement
+      # To enable ASan, run: DYLD_INSERT_LIBRARIES=/Library/Developer/CommandLineTools/usr/lib/clang/17/lib/darwin/libclang_rt.asan_osx_dynamic.dylib python your_script.py
+      compile_flags = os.environ.get("CLANG_FLAGS", "-O2")
+      if os.system(f"clang {compile_flags} -shared -o {lib_path/ 'main.so'} {c_path}"):
         print("\x1b[31mCLANG ERROR\x1b[0m")
         exit(256) 
       (lib_path/"hash").write_text(c_hash)

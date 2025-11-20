@@ -139,7 +139,7 @@ char* tag_fmt(Tag tag){
 char* term_fmt(PORT port, Runtime* rt){
   Term* term = get_term(port, rt);
 
-  char*buf = malloc(sizeof(char) * 20);
+  char*buf = malloc(sizeof(char) * 100);
 
   int l1 = get_loc(term->s[0]);
   int l2 = get_loc(term->s[1]);
@@ -148,22 +148,23 @@ char* term_fmt(PORT port, Runtime* rt){
   
   switch (get_tag(port, rt)){
     case Dup:
-      sprintf(buf, "Dup%d: <%d,%d> <xor= %d,%d>", get_label(port, rt) , l1, s1, l2, s2); break;
+      snprintf(buf, 100, "Dup%d: <%d,%d> <xor= %d,%d>", get_label(port, rt) , l1, s1, l2, s2); break;
     case Sup:
-      sprintf(buf, "Sup%d: <%d,%d> <%d,%d>", get_label(port, rt) , l1, s1, l2, s2); break;
+      snprintf(buf, 100, "Sup%d: <%d,%d> <%d,%d>", get_label(port, rt) , l1, s1, l2, s2); break;
     case ERA: case ROOT: case Null:
-      sprintf(buf, "%s: <%d,%d>", tag_fmt(get_tag(port, rt)), l1, s1); break;
+      snprintf(buf, 100, "%s: <%d,%d>", tag_fmt(get_tag(port, rt)), l1, s1); break;
     default:
-      sprintf(buf, "%s: <%d,%d> <%d,%d>", tag_fmt(term->tag), l1, s1, l2, s2); break;
+      snprintf(buf, 100, "%s: <%d,%d> <%d,%d>", tag_fmt(term->tag), l1, s1, l2, s2); break;
   }
   return buf;
 }
 
 
+
 char* port_fmt(PORT port, Runtime* rt){
-  char* buf = malloc(sizeof(char) * 20);
+  char* buf = malloc(sizeof(char) * 100);
   char* tf = term_fmt(port, rt);
-  sprintf(buf, "<%d,%d: %s>", get_loc(port), get_side(port), tf);
+  snprintf(buf, 100, "<%d,%d: %s>", get_loc(port), get_side(port), tf);
   return buf;
 }
 
@@ -197,7 +198,7 @@ void _tree(PORT port, int d, BST* seen, Runtime* rt){
       _tree(src[0], d+1, seen, rt);
       break;
     case Dup:{
-      printf("Dup%d %d\n", get_label(port, rt), get_side(port));
+      printf("Dup%d %d xor%d %d\n", get_label(port, rt), get_side(port), src[1] >> 1, src[1] & 1);
       _tree(src[0], d+1, seen, rt);
       break;
     }
@@ -232,7 +233,7 @@ LOC get_root(Runtime* rt){
 
 
 void set_port(PORT port, PORT content, Runtime* rt){
-  // printf("set port %d %d %d %d\n", port>>1, port & 1, content>>1, content & 1);
+  printf("set port %d %d %d %d\n", port>>1, port & 1, content>>1, content & 1);
   get_s(port, rt)[get_side(port)] = content;
 }
 
@@ -244,6 +245,7 @@ PORT get_port(PORT port, Runtime* rt){
 
 
 void set_dup_aux(PORT port, PORT a, PORT b, Runtime* rt){
+  printf("set dup aux %s\n", port_fmt(port, rt));
   Tag duptag = get_tag(port, rt);
   if (duptag != Dup) printf("cannot set aux ports of non-dup %s\n", tag_fmt(port));
   get_s(port, rt)[1] = a ^ b;
@@ -347,8 +349,18 @@ void _check(PORT owner, BST* seen,Runtime* rt){
       _check(port ^ 1, seen, rt);
       break;
     }
-    default: break;
-  }
+    // default: break;
+    case Null: break;
+    case ERA: break;
+    case ROOT: break;
+    case Prim: break;
+    case Freed:
+      // error("Freed term found");
+      tree(rt);
+      printf(RED "Freed term found: %s\n" RESET, port_fmt(port, rt));
+      exit(1);
+      
+    }
 
 }
 
@@ -364,9 +376,7 @@ void erase(PORT owner, Runtime* rt){
   switch (get_tag(port, rt)){
 
     case Lam:{
-      // set_port(port ^ 1 , new_node(ERA, 0, rt), rt);
-      set_port(to_s0(port), new_node(ERA, 0, rt), rt);
-      // erase(to_s1(port), rt);
+      set_port(get_s(port, rt)[0], new_node(ERA, 0, rt), rt);
       printf("ERAS BOD\n");
       erase(to_s1(port), rt);
       break;
@@ -375,7 +385,10 @@ void erase(PORT owner, Runtime* rt){
       PORT * dup_s = get_s(port, rt);
       PORT other = dup_s[1] ^ owner;
       if (get_tag(other, rt) == ERA){
+        printf("owner: %s\n", port_fmt(owner, rt));
+        printf("other: %s\n", port_fmt(other, rt));
         printf("ERASE FULL DUP\n");
+
         erase(dup_s[0], rt);
         free_node(port, rt);
       }else{
@@ -398,24 +411,30 @@ void erase(PORT owner, Runtime* rt){
 
 }
 
-
 void move(PORT port, PORT owner, Runtime* rt){
 
 
   PORT content = get_port(owner, rt);
   Term* tar = get_term(content,rt);
 
-  if (tar->tag == Lam && get_side(content) == 1) tar->s[0] = port;
-  if (tar->tag == Dup) tar->s[1] ^= owner ^ port;
   if (get_tag(port, rt) == ERA) {
     printf("lets erase %s\n", port_fmt(owner, rt));
-    erase(owner, rt);}
+    erase(owner, rt);
+    return;
+  }
+  if (tar->tag == Lam && get_side(content) == 1) tar->s[0] = port;
+  if (tar->tag == Dup) {
+    printf("DUP update\n");
+    tar->s[1] ^= owner ^ port;}
   set_port(port, content, rt);
 
 }
 
 void app_lam(PORT owner, PORT app, PORT lam, Runtime* rt){
   PORT var = get_s(lam, rt)[0];
+  PORT arg = get_port(app | 1, rt);
+  printf("arg: %d\n", (get_term(arg,rt)->s[1]) >> 1);
+  // printf("app_lam var: %s arg: %s\n", port_fmt(var, rt), port_fmt(arg, rt));
   move(var, app | 1, rt);
   move(owner, lam | 1, rt);
 }
@@ -427,6 +446,8 @@ PORT mk_dup(PORT a, PORT b, PORT owner, int label, Runtime* rt){
   set_dup_aux(dup, a, b, rt);
   set_port(a, new_port(get_loc(dup), 0), rt);
   set_port(b, new_port(get_loc(dup), 1), rt);
+
+  
 
   move(dup, owner, rt);
   return new_port(get_loc(dup), 0);
@@ -516,9 +537,6 @@ void dup_lam(PORT owner, PORT dup, PORT lam, Runtime* rt){
   PORT other;
   get_dup_aux(&owner, &other, rt);
 
-  printf("owner: %s\n", port_fmt(owner, rt));
-  printf("other: %s\n", port_fmt(other, rt));
-
   Term* lam_term = get_term(lam, rt);
 
   PORT L2 = new_node(Lam, 0, rt);
@@ -526,19 +544,23 @@ void dup_lam(PORT owner, PORT dup, PORT lam, Runtime* rt){
 
   PORT bod = lam_term->s[1];
 
-  printf("bod: %s\n", port_fmt(bod, rt));
 
   PORT DUP = mk_dup(L1 | 1, L2 | 1, lam | 1, lab, rt);
 
-  printf("DUP: %s\n", port_fmt(DUP, rt));
-  
-  PORT varsup = new_node(Sup, lab, rt);
+  if (get_tag(lam_term->s[0], rt) == ERA){
 
-  set_port(lam_term->s[0], varsup, rt);
+    set_port(L1 | 0, new_node(ERA, 0, rt), rt);
+    set_port(L2 | 0, new_node(ERA, 0, rt), rt);
 
+  }else{
 
-  set_var(varsup | 0, L1, rt);
-  set_var(varsup | 1, L2, rt);
+    PORT varsup = new_node(Sup, lab, rt);
+    
+    set_port(lam_term->s[0], varsup, rt);
+    
+    set_var(varsup | 0, L1, rt);
+    set_var(varsup | 1, L2, rt);
+  }
 
   printf("L1: %s\n", port_fmt(L1, rt));
   printf("L2: %s\n", port_fmt(L2, rt));
@@ -601,7 +623,7 @@ int handle_redex(PORT owner, PORT term, Runtime* rt){
 
 int step(PORT owner, BST* seen, Runtime* rt){
 
-  printf("step %s\n", port_fmt(owner, rt));
+  // printf("step %s\n", port_fmt(owner, rt));
 
   if (contains(seen, owner)){
 
