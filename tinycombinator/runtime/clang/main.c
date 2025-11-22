@@ -563,8 +563,17 @@ void dup_prim(PORT owner, PORT dup, PORT prim, Runtime* rt){
   set_port(other, prim2, rt);
 }
 
+PORT mk_bool(int b, Runtime* rt){
+  PORT l1 = new_node(Lam, 0, rt);
+  PORT l2 = new_node(Lam, 0, rt);
+  set_port(l1 | 1, l2, rt);
+  set_var(l2 | 1, b ? l1 : l2 | 0, rt);
+  set_port(b ? l2 : l1 | 0, new_node(ERA, 0, rt), rt);
+  return l1;
+}
+
 void app_prim(PORT owner, PORT app, PORT prim, Runtime* rt){
-  // error("app prim not supported", rt);
+
   PORT arg = get_port(app | 1, rt);
   PORT prim_val = get_port(prim | 0, rt);
   PORT arg_val = get_port(arg | 0, rt);
@@ -580,37 +589,49 @@ void app_prim(PORT owner, PORT app, PORT prim, Runtime* rt){
   PORT a0 = get_port(arg | 0, rt);
   PORT a1 = get_port(arg | 1, rt);
 
-
-
+  PORT op = a1 >> 1;
+  PORT x = a0 >> 1;
+  PORT y = p0 >> 1;
+  PORT res;
 
   if (p1 == 0){
-    // printf("first step\n");
     if (a1 == 0){
       PORT op = p0 & 1 ? p0 : a0;
       PORT x = p0 & 1 ? a0 : p0;
       set_port(prim | 0, x, rt);
       set_port(prim | 1, op, rt);
-      // printf("res: %d %d\n", x, op);
-    }else{
-      PORT op = a1;
-      PORT x = a0;
-      PORT y = p0;
-      // printf("second step\n");
-      set_port(prim | 0, to_s0(x + y), rt);
-      set_port(prim | 1, 0, rt);
+      set_port(owner, prim, rt);
+      return;
     }
   }else{
-    // printf("second step B\n");
-
-    PORT op = p1;
-    PORT x = p0 >> 1;
-    PORT y = a0 >> 1;
-    PORT res = (x+y) << 1;
-    // printf("res: %d %d %d\n", x, y, res);
-    set_port(prim | 0, res , rt);
-    set_port(prim | 1, 0, rt);
+    op = p1 >> 1;
+    x = p0 >> 1;
+    y = a0 >> 1;
   }
+  
+  if (op == 0) res = (x+y);
+  else if(op == 1) res = (x-y);
+  else if (op == 2) res = (x*y);
+  else if (op == 3) res = (x/y);
+  else if (op == 4) res = (x%y);
+  else if (op == 5) res = (x^y);
 
+  else{
+    if (op == 6) res = mk_bool(x==y, rt);
+    else if (op == 7) res = mk_bool(x!=y, rt);
+    else if (op == 8) res = mk_bool(x<y, rt);
+    else if (op == 9) res = mk_bool(x>y, rt);
+    else {
+      printf("invalid operation: %d\n", op);
+      error("invalid operation", rt);
+    }
+    set_port(owner, res, rt);
+    return;
+  }
+  res <<= 1;
+
+  set_port(prim | 0, res , rt);
+  set_port(prim | 1, 0, rt);
   set_port(owner, prim, rt);
 }
 

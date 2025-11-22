@@ -34,6 +34,7 @@ class Term:
   def __new__(cls, x, *args, **kwargs):
 
     if isinstance(x, Term): return x
+    if isinstance(x, bool): return T() if x else F()
     if x is None: return Term(Node(Tag.Null))
     if callable(x):
       if x.__code__.co_argcount == 0: return x()
