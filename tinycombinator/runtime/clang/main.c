@@ -626,13 +626,13 @@ int handle_redex(PORT owner, PORT term, Runtime* rt){
       ( otag == Lam ? app_lam
       : otag == Sup ? app_sup
       : otag == Null ? app_null
-      : otag == Prim ? app_prim
+      // : otag == Prim ? app_prim
       : NULL)
     :(tag == Dup) ?
       ( otag == Lam ? dup_lam
       : otag == Sup ? dup_sup
       : otag == Null ? dup_null
-      : otag == Prim ? dup_prim
+      // : otag == Prim ? dup_prim
       : NULL) : NULL;
 
   if (handler != NULL){
