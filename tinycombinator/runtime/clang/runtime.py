@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 from tinycombinator.helpers import DEBUG, debug
 from tinycombinator.nodes import PN, Node, Port, Tag, wire, MathOps
-from tinycombinator.term import Term
 
 
 current_dir = Path(__file__).parent
@@ -35,20 +34,27 @@ def neg_ports(tag:Tag): return [i for i in PN if tag.negative_polarity(i)]
 side = int
 num = int
 
+CErrorType = ctypes.CFUNCTYPE(None)
+
+def CError():
+  print("cerror from pythn")
+
+
+
+import threading
+local = threading.local()
+
 def CCall(name:str, argtypes: list[type], restype: type, *args):
 
   if len(argtypes) != len(args):
     print(f"ERROR CLANGCALL: {name} {argtypes} {args}")
     exit(256)
-  import threading
-  local = threading.local()
   if not hasattr(local, "lib"):
+
     c_code = c_path.read_text()
     c_hash = hashlib.sha256(c_code.encode()).hexdigest()
     if (not (lib_path / "hash").exists()) or (c_hash != (lib_path/"hash").read_text()):
       debug("compiling ... ")
-      # Remove -fsanitize=address for now due to macOS DYLD_INSERT_LIBRARIES requirement
-      # To enable ASan, run: DYLD_INSERT_LIBRARIES=/Library/Developer/CommandLineTools/usr/lib/clang/17/lib/darwin/libclang_rt.asan_osx_dynamic.dylib python your_script.py
       compile_flags = os.environ.get("CLANG_FLAGS", "-O2")
       if os.system(f"clang {compile_flags} -shared -o {lib_path/ 'main.so'} {c_path}"):
         print("\x1b[31mCLANG ERROR\x1b[0m")
@@ -56,6 +62,7 @@ def CCall(name:str, argtypes: list[type], restype: type, *args):
       (lib_path/"hash").write_text(c_hash)
 
     local.lib = ctypes.CDLL(lib_path / "main.so")
+
   
   local.lib.set_debug.argtypes = [Cint]
   local.lib.set_debug(DEBUG.get())
@@ -68,14 +75,16 @@ def CCall(name:str, argtypes: list[type], restype: type, *args):
 
 def serialize_node(root:Node)->CPtr:
 
-  rt = CCall("new_runtime", [], CPtr)
+  local.runtime = CCall("new_runtime", [], CPtr)
+
+
   cache = {}
   for node in root.walk():
 
-    port = CCall("new_node", [Cint, Cint, CPtr], Cint, node.tag.value, node.label, rt)
+    port = CCall("new_node", [Cint, Cint, CPtr], Cint, node.tag.value, node.label, local.runtime)
     cache[node] = get_loc(port)
   
-  CCall("set_root", [Cint, CPtr], None, cache[root], rt)
+  CCall("set_root", [Cint, CPtr], None, cache[root], local.runtime)
 
   for node in root.walk():
     def c_connect(side:int):
@@ -84,8 +93,8 @@ def serialize_node(root:Node)->CPtr:
       neg = node.tag.negative_polarity(portn)
       options = (encoded_ports if neg else neg_ports)(other.tag)
       cside = options.index(other.number)
-      CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], side), make_port(cache[other.node], cside), rt)
-      assert CCall("get_port", [PORT, CPtr], PORT, make_port(cache[node], side), rt) == make_port(cache[other.node], cside)
+      CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], side), make_port(cache[other.node], cside), local.runtime)
+      assert CCall("get_port", [PORT, CPtr], PORT, make_port(cache[node], side), local.runtime) == make_port(cache[other.node], cside)
 
     match node.tag:
       case Tag.Dup:
@@ -95,16 +104,15 @@ def serialize_node(root:Node)->CPtr:
           o = node.con[i]
           oside = encoded_ports(o.tag).index(o.number)
           ps.append(make_port(cache[o.node], oside))
-        CCall("set_dup_aux", [PORT, PORT, PORT, CPtr], None, make_port(cache[node], 0), ps[0], ps[1], rt)
+        CCall("set_dup_aux", [PORT, PORT, PORT, CPtr], None, make_port(cache[node], 0), ps[0], ps[1], local.runtime)
       case Tag.Prim:
         CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], 0),
-        make_port(node.value, 0) if isinstance(node.value, int) else make_port(node.value.value, 1), rt)
+        make_port(node.value, 0) if isinstance(node.value, int) else make_port(node.value.value, 1), local.runtime)
 
       case _:
         for i in range(len(encoded_ports(node.tag))): c_connect(i)
 
 
-  return rt
 
 
 def deserialize_term(rt:CPtr):
@@ -142,9 +150,9 @@ def deserialize_term(rt:CPtr):
 
 
 def run(root:Node, steps:int):
-  r = serialize_node(root)
-  CCall("run", [CPtr, Cint], Cint, r, steps)
-  d = deserialize_term(r).con[0]
+  serialize_node(root)
+  CCall("run", [CPtr, Cint], Cint, local.runtime, steps)
+  d = deserialize_term(local.runtime).con[0]
   assert d is not None
   wire((root, 0), d)
 

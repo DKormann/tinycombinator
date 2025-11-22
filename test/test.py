@@ -19,6 +19,7 @@ class ConstructionRepresentation(unittest.TestCase):
     with print_tree(False), Context(**envs):
       if isinstance(expected, Term): expected = str(expected)
       if callable(expected): expected = str(Term(expected))
+      if not isinstance(expected, str): expected = str(expected)
 
       self.assertEqual(str(Term(term)), expected)
   
@@ -39,7 +40,7 @@ class ConstructionRepresentation(unittest.TestCase):
   
   def _assert_run(self, term:Any, expected:str, **envs):
 
-    self._assert_fmt(term.run(), expected, **envs)
+    self._assert_fmt(Term(term).run(), expected, **envs)
 
   def test_clone(self):
     for term in basics:
@@ -56,11 +57,13 @@ class ConstructionRepresentation(unittest.TestCase):
   def test_run(self):
 
     self._assert_run(ID()(ID()), ID())
-    self._assert_run(Term.sup(1,2,0)(3), '&0{ ( 1 3) ( 2 3)}')
+    self._assert_run(lambda x,y: Term.sup(x,y,0)(3), 'λa λb &0{ ( a 3) ( b 3)}')
 
     self._assert_run(sup_ex.dups(0)[0], "λa a")
     self._assert_run(sup_ex.dups(0)[1], "NULL")
     self._assert_run(sup_ex.dups(1)[0], "&0{ λa a NULL}")
+
+    self._assert_run(Term(1) + 2, 3)
 
     self._assert_run(Term(lambda x,y:x).dups(0)[0], Term(lambda x,y:x))
     self._assert_run(Term(lambda x,y:y).dups(0)[0], Term(lambda x,y:y))
@@ -102,6 +105,13 @@ class ConstructionRepresentation(unittest.TestCase):
       scott.nat(0),
       hide_dups = True
     )
+
+    for a in [2,3]:
+      for b in [2,3]:
+        self._assert_run(
+          scott.eq()(scott.nat(a), scott.nat(b)),
+          scott.boolean(a==b)
+        )
 
   def test_circular(self):
 

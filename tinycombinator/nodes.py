@@ -42,6 +42,7 @@ class Tag(Enum):
 class MathOps(Enum):
   Add, Sub, Mul, Div, Mod, Pow, Eq, Ne, Lt, Gt = range(10)
   __str__ = __repr__ = lambda self: ["+", "-", "*", "/", "%", "^", "==", "!=", "<", ">"][self.value]
+  def __call__(self, x): return lambda y: eval(f"{x} {self} {y}")
 
 
 @dataclass
@@ -94,7 +95,10 @@ class Port:
   @property
   def tag(self): return self.node.tag 
 
-  def __eq__(self, other: "Port"): return self.node is other.node and self.number == other.number
+  def __eq__(self, other: "Port"):
+    # if not isinstance(other, Port): return
+
+    return self.node is other.node and self.number == other.number
   def __hash__(self): return hash((id(self.node), self.number))
 
 
