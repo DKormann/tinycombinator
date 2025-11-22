@@ -1,10 +1,10 @@
 import ctypes
 import hashlib
+import threading
 import os
 from pathlib import Path
 from tinycombinator.helpers import DEBUG, debug
 from tinycombinator.nodes import PN, Node, Port, Tag, wire, MathOps
-
 
 current_dir = Path(__file__).parent
 c_path = current_dir / "main.c"
@@ -34,18 +34,16 @@ def neg_ports(tag:Tag): return [i for i in PN if tag.negative_polarity(i)]
 side = int
 num = int
 
-CErrorType = ctypes.CFUNCTYPE(None)
-
-def CError():
-  print("cerror from pythn")
-
-
-
-import threading
 local = threading.local()
+CPrintType = ctypes.CFUNCTYPE(None, ctypes.c_char_p)
+
+@CPrintType
+def Cprint(content:bytes):
+  print(content.decode())
+
+
 
 def CCall(name:str, argtypes: list[type], restype: type, *args):
-
   if len(argtypes) != len(args):
     print(f"ERROR CLANGCALL: {name} {argtypes} {args}")
     exit(256)
@@ -60,9 +58,7 @@ def CCall(name:str, argtypes: list[type], restype: type, *args):
         print("\x1b[31mCLANG ERROR\x1b[0m")
         exit(256) 
       (lib_path/"hash").write_text(c_hash)
-
     local.lib = ctypes.CDLL(lib_path / "main.so")
-
   
   local.lib.set_debug.argtypes = [Cint]
   local.lib.set_debug(DEBUG.get())
@@ -71,12 +67,12 @@ def CCall(name:str, argtypes: list[type], restype: type, *args):
   fun.argtypes = argtypes
   fun.restype = restype
   res = fun(*args)
+
   return res
 
 def serialize_node(root:Node)->CPtr:
 
-  local.runtime = CCall("new_runtime", [], CPtr)
-
+  local.runtime = CCall("new_runtime", [ CPrintType], CPtr, Cprint)
 
   cache = {}
   for node in root.walk():
@@ -151,7 +147,8 @@ def deserialize_term(rt:CPtr):
 
 def run(root:Node, steps:int):
   serialize_node(root)
-  CCall("run", [CPtr, Cint], Cint, local.runtime, steps)
+  res = CCall("run", [CPtr, Cint], Cint, local.runtime, steps)
+  if res < 0: raise RuntimeError(CCall("get_error_msg", [CPtr], ctypes.c_char_p, local.runtime).decode())
   d = deserialize_term(local.runtime).con[0]
   assert d is not None
   wire((root, 0), d)

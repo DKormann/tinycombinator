@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <setjmp.h>
+#include <string.h>
 
 typedef int32_t LOC;
 typedef int32_t PORT;
@@ -41,16 +43,6 @@ void free_tree(BST *root) {
 #define RED     "\x1b[31m"
 #define RESET   "\x1b[0m"
 
-void error(char* msg){
-  printf(RED "fatal: %s\n" RESET, msg );
-  exit(1);
-}
-
-void assert(int cond, char* msg){
-  if (!cond) error(msg);
-}
-
-
 
 
 int DEBUG = 0;
@@ -82,9 +74,24 @@ typedef struct {
   int node_ctr;
   int steps;
   int fuel;
-  void (*panic)(void);
+  jmp_buf panic_jmp;
+  char* err_msg;
   void (*print)(char*);
 } Runtime;
+
+
+void error(char* msg, Runtime*rt){
+  rt->err_msg = msg;
+  longjmp(rt->panic_jmp, 1);
+}
+
+char* get_error_msg(Runtime* rt){
+  return rt->err_msg;
+}
+
+void assert(int cond, char* msg, Runtime* rt){
+  if (!cond) error(msg, rt);
+}
 
 PORT new_port(LOC loc, int side){
   return loc << 1 | side;
@@ -220,10 +227,9 @@ void _tree(PORT port, int d, BST* seen, Runtime* rt){
 
 void tree(Runtime* rt){_tree(rt->root, 0, NULL, rt);}
 
-Runtime* new_runtime(void){
-  printf("new runtime\n");
+Runtime* new_runtime(void(*print)(char*)){
   Runtime* rt = calloc(1, sizeof(Runtime));
-
+  rt->print = print;
   return rt;
 }
 
@@ -268,7 +274,7 @@ PORT new_node(Tag tag, int label, Runtime* rt){
   }else{
     port = rt->empty;
     rt->empty = new_port(get_loc(rt->empty) + 1, 0);
-    if (get_loc(rt->empty) >= MAX_TERMS) error("Error: MAX_TERMS reached\n");
+    if (get_loc(rt->empty) >= MAX_TERMS) error("Error: MAX_TERMS reached\n", rt);
   }
   rt->node_ctr ++;
   Term* term = get_term(port, rt);
@@ -550,12 +556,12 @@ void dup_prim(PORT owner, PORT dup, PORT prim, Runtime* rt){
 }
 
 void app_prim(PORT owner, PORT app, PORT prim, Runtime* rt){
-  error("app prim not supported");
+  error("app prim not supported", rt);
 }
 
 
 int handle_redex(PORT owner, PORT term, Runtime* rt){
-  if (get_port(owner, rt) != term) error("owner and term do not match");
+  if (get_port(owner, rt) != term) error("owner and term do not match", rt);
 
   if (rt->steps >= rt->fuel) return 0;
   Tag tag = get_tag(term, rt);
@@ -623,7 +629,7 @@ int run(Runtime* rt, int steps){
   rt->fuel = steps;
   rt->steps = 0;
 
-
+  if (setjmp(rt->panic_jmp) == 1) return -1;
 
 
   PORT root = rt->root;
