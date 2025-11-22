@@ -63,7 +63,6 @@ class ConstructionRepresentation(unittest.TestCase):
     self._assert_run(sup_ex.dups(0)[1], "NULL")
     self._assert_run(sup_ex.dups(1)[0], "&0{ λa a NULL}")
 
-    self._assert_run(Term(1) + 2, 3)
 
     self._assert_run(Term(lambda x,y:x).dups(0)[0], Term(lambda x,y:x))
     self._assert_run(Term(lambda x,y:y).dups(0)[0], Term(lambda x,y:y))
@@ -85,6 +84,9 @@ class ConstructionRepresentation(unittest.TestCase):
     self._assert_run(Term(lambda x: (Term(lambda y:y)(x))), lambda x:x)
     self._assert_run(Term(lambda x: (Term(lambda x,y:y)(x))), lambda x,y:y)
     self._assert_run(Term(lambda x,y,z:(Term.sup(x,y, 0))(z)), "λa λb λc &0{ ( a d where &0{d, e} = c) ( b e)}")
+
+  def test_prims(self):
+    self._assert_run(Term(1) + 2, 3)
 
 
   def test_scott(self):
