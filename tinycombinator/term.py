@@ -29,6 +29,8 @@ class Term:
     if not x.is_term(): raise ValueError(f"not a term: {x}")
     self.port : Port = x
   
+  __match_args__ = ('port',)
+  
   def __new__(cls, x, *args, **kwargs):
 
     if isinstance(x, Term): return x
@@ -218,8 +220,21 @@ def parse_fun(fn: Callable)->Node:
   if lam.con[PN.AUX1] is None: wire(Port(lam, PN.AUX1), Port(Node(Tag.ERA)))
   return Port(lam)
 
-def ID(): return Term(lambda x: x)
-def T(): return Term(lambda x, y: x)
-def F(): return Term(lambda x, y: y)
+def Ifun(f:Callable):
+  return lambda *args: Term(f)(*args)
+
+@Ifun
+def Y_comb(f:Term):
+  return Term(lambda x: f(x(x))) (Term(lambda x: f(x(x))))
+
+@Ifun
+def ID(x:Term): return x
+
+@Ifun
+def T(x,y): return x
+
+@Ifun
+def F(x,y): return y
+
 
 

@@ -1,4 +1,8 @@
+"""
 
+church encodings
+
+"""
 
 
 from tinycombinator.term import Term

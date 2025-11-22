@@ -51,6 +51,8 @@ void assert(int cond, char* msg){
 }
 
 
+
+
 int DEBUG = 0;
 
 void set_debug(int debug){ DEBUG = debug; }
@@ -59,6 +61,10 @@ typedef enum{
   App, Lam, Dup, Sup, Null, Prim, ERA, ROOT, Freed
 } Tag;
 
+
+typedef enum{
+  Add, Sub, Mul, Div, Mod, Pow, Eq, Ne, Lt, Gt
+} MathOps;
 
 typedef int32_t PORT;
 
@@ -76,6 +82,8 @@ typedef struct {
   int node_ctr;
   int steps;
   int fuel;
+  void (*panic)(void);
+  void (*print)(char*);
 } Runtime;
 
 PORT new_port(LOC loc, int side){
@@ -114,13 +122,7 @@ int get_label(PORT port, Runtime* rt){
   return get_term(port, rt)->label;
 }
 
-void set_tag(PORT port, Tag tag, Runtime* rt){
-  get_term(port, rt)->tag = tag;
-}
 
-void set_label(PORT port, int label, Runtime* rt){
-  get_term(port, rt)->label = label;
-}
 
 char* tag_fmt(Tag tag){
   switch (tag){
@@ -218,8 +220,10 @@ void _tree(PORT port, int d, BST* seen, Runtime* rt){
 
 void tree(Runtime* rt){_tree(rt->root, 0, NULL, rt);}
 
-Runtime* new_runtime(){
+Runtime* new_runtime(void){
+  printf("new runtime\n");
   Runtime* rt = calloc(1, sizeof(Runtime));
+
   return rt;
 }
 
@@ -267,10 +271,11 @@ PORT new_node(Tag tag, int label, Runtime* rt){
     if (get_loc(rt->empty) >= MAX_TERMS) error("Error: MAX_TERMS reached\n");
   }
   rt->node_ctr ++;
-  set_tag(port, tag, rt);
-  set_label(port, label, rt);
-  get_s(port, rt)[0] = 0;
-  get_s(port, rt)[1] = 0;
+  Term* term = get_term(port, rt);
+  term->tag = tag;
+  term->label = label;
+  term->s[0] = 0;
+  term->s[1] = 0;
 
   return port;
 }
@@ -280,8 +285,10 @@ void free_node(PORT port, Runtime* rt){
     printf(RED "Error: Term %s is already freed\n", term_fmt(port, rt));
     exit(1);
   }
-  set_tag(port, Freed, rt);
-  set_port(port, rt->free_list, rt);
+  Term* term = get_term(port, rt);
+  term->tag = Freed;
+  term->s[0] = rt->free_list;
+  term->s[1] = 0;
   rt->free_list = port;
 }
 
@@ -547,7 +554,6 @@ void app_prim(PORT owner, PORT app, PORT prim, Runtime* rt){
 }
 
 
-
 int handle_redex(PORT owner, PORT term, Runtime* rt){
   if (get_port(owner, rt) != term) error("owner and term do not match");
 
@@ -562,7 +568,7 @@ int handle_redex(PORT owner, PORT term, Runtime* rt){
       ( otag == Lam ? app_lam
       : otag == Sup ? app_sup
       : otag == Null ? app_null
-      // : otag == Prim ? app_prim
+      : otag == Prim ? app_prim
       : NULL)
     :(tag == Dup) ?
       ( otag == Lam ? dup_lam
@@ -612,9 +618,13 @@ void reduce(PORT term, BST* seen, Runtime* rt){
   }
 }
 
+
 int run(Runtime* rt, int steps){
   rt->fuel = steps;
   rt->steps = 0;
+
+
+
 
   PORT root = rt->root;
   BST* ctx = insert(NULL, -1);

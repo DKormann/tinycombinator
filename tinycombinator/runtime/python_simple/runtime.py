@@ -25,15 +25,25 @@ def commute(dup: Node, lam: Node)->Node:
   new = [[Node(dup.tag, dup.label), Node(d2tag, dup.label)], [Node(lam.tag, lam.label), Node(l2tag, lam.label)]]
 
 
-  wire(Port(new[0][0], 0), lam.con[2])
-  wire(Port(new[0][1], 0), lam.con[1])
-  wire(Port(new[1][0], 0), dup.con[2])
-  wire(Port(new[1][1], 0), dup.con[1])
+  wire((new[0][0], 0), lam.con[2])
+  wire((new[0][1], 0), lam.con[1])
+  wire((new[1][0], 0), dup.con[2])
+  wire((new[1][1], 0), dup.con[1])
 
-  wire(Port(new[1][0], 1), Port(new[0][1], 2))
-  wire(Port(new[1][0], 2), Port(new[0][0], 2))
-  wire(Port(new[1][1], 1), Port(new[0][1], 1))
-  wire(Port(new[1][1], 2), Port(new[0][0], 1))
+  wire((new[1][0], 1), (new[0][1], 2))
+  wire((new[1][0], 2), (new[0][0], 2))
+  wire((new[1][1], 1), (new[0][1], 1))
+  wire((new[1][1], 2), (new[0][0], 1))
+
+def prim_exec(app: Node, prim:Node):
+  arg = app.con[PN.AUX1]
+  if arg.tag != Tag.Prim:
+    wire((app, 0), arg)
+    wire((app, 1), (prim, 0))
+  else:
+    prim.value = prim.value(arg.node.value) if callable(prim.value) else arg.node.value(prim.value)
+    wire(app.con[PN.AUX2], (prim, 0))
+
 
 def redex(node: Node):
   if node.con[PN.MAIN].number != PN.MAIN: return False
@@ -45,17 +55,13 @@ def redex(node: Node):
     case (Tag.Dup, Tag.Sup):
       if node.label == other.label: anihilate(node, other)
       else: commute(node, other)
+    case (Tag.App, Tag.Prim): prim_exec(node, other)
     case _: return False
   return True
-
-
 
 def step(node: Node)->bool:
   for x in node.walk():
     if redex(x): return True
-
-
-
 
 def run(root: Node, steps: int = None):
   """reduces inplace"""
@@ -63,9 +69,3 @@ def run(root: Node, steps: int = None):
   if steps is None: steps = int(1e9)
   for _ in range(steps):
     if not step(root.con[PN.MAIN].node): break
-
-
-
-
-  
-
