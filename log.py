@@ -20,6 +20,11 @@ class HTML:
       return HTML(tag=tag, attrs=attrs, content=content)
     return mk
 
+
+@dataclass
+class Script: code: str
+
+
 p = HTML.html("p")
 h1 = HTML.html("h1")
 h2 = HTML.html("h2")
@@ -28,8 +33,6 @@ div = HTML.html("div")
 span = HTML.html("span")
 script = HTML.html("script")
 style = HTML.html("style")
-
-# button = HTML.html("button")
 check = random.randint(0, 10_000)
 out = []
 
@@ -88,7 +91,13 @@ def code (): return page(
   function add_log(index) {{
     let line = document.createElement('p');
     terminal.appendChild(line);
-    fetch(`/log/${{index}}`).then(response => response.text()).then(data => line.innerHTML = data);
+    fetch(`/log/${{index}}`).then(response => response.json()).then(data => {{
+      line.innerHTML = `<span style="color: #888;">out[${{index}}]: </span>`;
+      let content = document.createElement('span');
+      line.appendChild(content);
+      content.innerHTML = data.html;
+      if (data.code) content.replaceWith((new Function(data.code))() ?? content);
+      }});
   }}
 
   let refresh = () => {{
@@ -107,6 +116,9 @@ def code (): return page(
   setInterval(refresh, 100);
 ''')).code()
 
+
+
+
 functions = {}
 
 def button(text: str, onclick: Callable)->HTML:
@@ -118,11 +130,12 @@ def button(text: str, onclick: Callable)->HTML:
 def log(message): out.append(message)
 def view(idx: int)->str:
   item = out[idx]
-  h = item
-  if isinstance(item, HTML): h = item
+  h = ""
+  if isinstance(item, HTML): h = item.code()
+  elif isinstance(item, Script): return json.dumps({"code": item.code})
   elif isinstance(item, str): h = item
   else: h = repr(item).replace("<", "&lt;").replace(">", "&gt;")
-  return p(span(f"out[{idx}]: ", style="color: #888;"), h).code()
+  return json.dumps({"html": h, "code": None})
 
 def get_logs(): return out
 def clear():
@@ -131,20 +144,37 @@ def clear():
   out.clear()
   functions.clear()
 
+log("h33llo")
+log(Script('''
+let d = document.createElement('span');
+d.innerHTML = 'hello';
+d.style.color = 'red';
+d.style.cursor = 'pointer';
+d.addEventListener('click', () => {{
+  console.log('clicked');
+  d.innerHTML = 'clicked';
+}});
+return d;
+'''))
+
 
 def pyeval(cmd: str):
   try: res = eval(cmd)
   except Exception as e: res = str(e)
   return res
 
-class Handler(BaseHTTPRequestHandler):    
+class Handler(BaseHTTPRequestHandler):
+  def log_message(self, format, *args):
+    pass
+    
   def do_GET(self):
     path = self.path.strip()
     if (path == "/logs"): self.respond("LOGS: " + "\n".join(out))
     elif (path.startswith("/log/")):
       self.respond(view(int(path.split("/log/")[1].split("/")[0])))
     elif (path == "/status"): self.respond(json.dumps({"version": check, "log_count": len(out)}))
-    elif (path == "/"): self.respond(code())
+    elif (path == "/"):
+      self.respond(code())
     else: self.respond(f"not found: '{path}'")
   
   def do_POST(self):
@@ -166,5 +196,7 @@ class Handler(BaseHTTPRequestHandler):
     self.wfile.write(message.encode())
 
 if __name__ == "__main__":
-  print("starting server on port 8000")
-  HTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
+  HTTPServer(
+    ("0.0.0.0", 8000),
+    Handler
+  ).serve_forever()
