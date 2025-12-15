@@ -2,9 +2,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import random
-
-from typing import Dict, Tuple, Union
-
+from typing import Callable, Dict, Tuple, Union
 
 @dataclass
 class HTML:
@@ -31,7 +29,7 @@ span = HTML.html("span")
 script = HTML.html("script")
 style = HTML.html("style")
 
-button = HTML.html("button")
+# button = HTML.html("button")
 check = random.randint(0, 10_000)
 out = []
 
@@ -66,19 +64,25 @@ def code (): return page(
   input.style.border = 'none';
   input.placeholder = '>>';
   body.appendChild(input);
-
+  function pyexec(cmd) {{
+    fetch('/call', {{
+      method: 'POST',
+      body: cmd
+    }})
+    refresh();
+  }}
   input.addEventListener('keydown', (event) => {{
     if (event.key === 'Enter') {{
-      // if (input.value) fetch(`/exec/${{input.value}}`)
-      if (input.value){{
-        fetch('/exec', {{
-          method: 'POST',
-          body: input.value
-        }})
-      }}
+      if (input.value) fetch('/exec', {{
+        method: 'POST',
+        body: input.value
+      }})
       input.value = '';
+      refresh();
     }}
   }});
+
+
   let log_count = 0;
   let version = {check};
   function add_log(index) {{
@@ -87,7 +91,7 @@ def code (): return page(
     fetch(`/log/${{index}}`).then(response => response.text()).then(data => line.innerHTML = data);
   }}
 
-  setInterval(() => {{
+  let refresh = () => {{
     fetch('/status').then(response => response.json()).then(data => {{
       ({{version: new_version, log_count: new_log_count}} = data);
       if (version != new_version){{
@@ -98,8 +102,18 @@ def code (): return page(
         log_count++;
       }}
     }});
-  }}, 100);
+  }};
+
+  setInterval(refresh, 100);
 ''')).code()
+
+functions = {}
+
+def button(text: str, onclick: Callable)->HTML:
+  id = len(functions)
+  functions[id] = onclick
+  return HTML.html("button")(text, onclick=f"pyexec('functions[{id}]()')")
+
 
 def log(message): out.append(message)
 def view(idx: int)->str:
@@ -107,24 +121,21 @@ def view(idx: int)->str:
   h = item
   if isinstance(item, HTML): h = item
   elif isinstance(item, str): h = item
-  else: h = repr(item)
+  else: h = repr(item).replace("<", "&lt;").replace(">", "&gt;")
   return p(span(f"out[{idx}]: ", style="color: #888;"), h).code()
 
 def get_logs(): return out
 def clear():
   global check
-  out.clear()
   check += 1
+  out.clear()
+  functions.clear()
 
-log(button("log", onclick="console.log('log')"))
 
-class Foo:
-  def __init__(self):
-    print("Foo.__init__")
-  def __view__(self): return "foo"
-  def __repr__(self): return "Foo()"
-log(Foo())
-
+def pyeval(cmd: str):
+  try: res = eval(cmd)
+  except Exception as e: res = str(e)
+  return res
 
 class Handler(BaseHTTPRequestHandler):    
   def do_GET(self):
@@ -138,12 +149,14 @@ class Handler(BaseHTTPRequestHandler):
   
   def do_POST(self):
     path = self.path.strip()
+    if (path == "/call"):
+      cmd = self.rfile.read(int(self.headers.get("Content-Length"))).decode()
+      pyeval(cmd)
+      self.respond("")
     if (path == "/exec"):
       cmd = self.rfile.read(int(self.headers.get("Content-Length"))).decode()
       log("$ " + cmd)
-      try: res = eval(cmd)
-      except Exception as e: res = str(e)
-      log(res)
+      log(pyeval(cmd))
       self.respond("")
   
   def respond(self, message: str):
@@ -154,6 +167,4 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
   print("starting server on port 8000")
-
-
   HTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
