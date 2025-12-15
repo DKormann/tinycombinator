@@ -69,7 +69,13 @@ def code (): return page(
 
   input.addEventListener('keydown', (event) => {{
     if (event.key === 'Enter') {{
-      if (input.value) fetch(`/exec/${{input.value}}`)
+      // if (input.value) fetch(`/exec/${{input.value}}`)
+      if (input.value){{
+        fetch('/exec', {{
+          method: 'POST',
+          body: input.value
+        }})
+      }}
       input.value = '';
     }}
   }});
@@ -127,15 +133,18 @@ class Handler(BaseHTTPRequestHandler):
     elif (path.startswith("/log/")):
       self.respond(view(int(path.split("/log/")[1].split("/")[0])))
     elif (path == "/status"): self.respond(json.dumps({"version": check, "log_count": len(out)}))
-    elif (path.startswith("/exec/")):
-      cmd = path.split("/exec/")[1].split("/")[0]
-      log(">>" + cmd)
+    elif (path == "/"): self.respond(code())
+    else: self.respond(f"not found: '{path}'")
+  
+  def do_POST(self):
+    path = self.path.strip()
+    if (path == "/exec"):
+      cmd = self.rfile.read(int(self.headers.get("Content-Length"))).decode()
+      log("$ " + cmd)
       try: res = eval(cmd)
       except Exception as e: res = str(e)
       log(res)
       self.respond("")
-    elif (path == "/"): self.respond(code())
-    else: self.respond(f"not found: '{path}'")
   
   def respond(self, message: str):
     self.send_response(200)
