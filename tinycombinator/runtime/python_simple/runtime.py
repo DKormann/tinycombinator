@@ -21,7 +21,6 @@ def commute(dup: Node, lam: Node)->Node:
   tags = (dup.tag, lam.tag)
   d2tag = Tag.Sup if tags == (Tag.Dup, Tag.Lam) else dup.tag
   l2tag = Tag.Dup if tags == (Tag.App, Tag.Sup) else lam.tag
-
   new = [[Node(dup.tag, dup.label), Node(d2tag, dup.label)], [Node(lam.tag, lam.label), Node(l2tag, lam.label)]]
 
 
