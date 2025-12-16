@@ -1,327 +1,171 @@
-# from dataclasses import dataclass
-# from http.server import BaseHTTPRequestHandler, HTTPServer
-# import json
-# import random
-# from typing import Callable, Dict, Tuple, Union
-
-# @dataclass
-# class HTML:
-#   tag: str
-#   attrs: Dict[str, str]
-#   content: Tuple[Union[str, "HTML"]]
-#   def code(self):
-#     attrs = " ".join([f"{k}=\"{v}\"" for k, v in self.attrs.items()])
-#     content = "".join([item.code() if isinstance(item, HTML) else str(item) for item in self.content])
-#     return f'''<{self.tag} {attrs}>{content}</{self.tag}>'''
-
-#   @staticmethod
-#   def html(tag: str):
-#     def mk(*content: Union[str, "HTML"], **attrs: Dict[str, str]):
-#       return HTML(tag=tag, attrs=attrs, content=content)
-#     return mk
-
-
-# @dataclass
-# class Script: code: str
-
-
-# p = HTML.html("p")
-# h1 = HTML.html("h1")
-# h2 = HTML.html("h2")
-# h3 = HTML.html("h3")
-# div = HTML.html("div")
-# span = HTML.html("span")
-# script = HTML.html("script")
-# style = HTML.html("style")
-# check = random.randint(0, 10_000)
-# out = []
-
-
-# def page(*content: HTML):
-#   return HTML.html("html")(
-#     HTML.html("head")(
-#       style(
-#         '''
-#         body {
-#           --background: #f0f0f0; --color: #000000;
-#           color: var(--color);
-#           background: var(--background);
-#           font-family: monospace;
-#         }
-
-#         @media (prefers-color-scheme: dark) {body {--background: #000000; --color: #f0f0f0;}}
-#         '''
-#       )
-#     ),
-#     HTML.html("body")(*content)
-#   )
-
-# def code (): return page(
-
-#   script(f'''
-#   let body = document.body;
-#   let terminal = document.createElement('div');
-#   body.appendChild(terminal);
-#   let input = document.createElement('input');
-#   input.id = 'input';
-#   input.style.border = 'none';
-#   input.placeholder = '>>';
-#   body.appendChild(input);
-#   function pyexec(cmd) {{
-#     fetch('/call', {{
-#       method: 'POST',
-#       body: cmd
-#     }})
-#     refresh();
-#   }}
-#   input.addEventListener('keydown', (event) => {{
-#     if (event.key === 'Enter') {{
-#       if (input.value) fetch('/exec', {{
-#         method: 'POST',
-#         body: input.value
-#       }})
-#       input.value = '';
-#       refresh();
-#     }}
-#   }});
-
-
-#   let log_count = 0;
-#   let version = {check};
-#   function add_log(index) {{
-#     let line = document.createElement('p');
-#     terminal.appendChild(line);
-#     fetch(`/log/${{index}}`).then(response => response.json()).then(data => {{
-#       line.innerHTML = `<span style="color: #888;">out[${{index}}]: </span>`;
-#       let content = document.createElement('span');
-#       line.appendChild(content);
-#       content.innerHTML = data.html;
-#       if (data.code) content.replaceWith((new Function(data.code))() ?? content);
-#       }});
-#   }}
-
-#   let refresh = () => {{
-#     fetch('/status').then(response => response.json()).then(data => {{
-#       ({{version: new_version, log_count: new_log_count}} = data);
-#       if (version != new_version){{
-#         window.location.reload();
-#       }}
-#       while (log_count < new_log_count) {{
-#         add_log(log_count);
-#         log_count++;
-#       }}
-#     }});
-#   }};
-
-#   setInterval(refresh, 100);
-# ''')).code()
-
-
-
-
-# functions = {}
-
-# def button(text: str, onclick: Callable)->HTML:
-#   id = len(functions)
-#   functions[id] = onclick
-#   return HTML.html("button")(text, onclick=f"pyexec('functions[{id}]()')")
-
-
-# def log(message): out.append(message)
-# def view(idx: int)->str:
-#   item = out[idx]
-#   h = ""
-#   if isinstance(item, HTML): h = item.code()
-#   elif isinstance(item, Script): return json.dumps({"code": item.code})
-#   elif isinstance(item, str): h = item
-#   else: h = repr(item).replace("<", "&lt;").replace(">", "&gt;")
-#   return json.dumps({"html": h, "code": None})
-
-# def get_logs(): return out
-# def clear():
-#   global check
-#   check += 1
-#   out.clear()
-#   functions.clear()
-
-# log("h33llo")
-# log(Script('''
-# let d = document.createElement('span');
-# d.innerHTML = 'hello';
-# d.style.color = 'red';
-# d.style.cursor = 'pointer';
-# d.addEventListener('click', () => {{
-#   console.log('clicked');
-#   d.innerHTML = 'clicked';
-# }});
-# return d;
-# '''))
-
-
-# def pyeval(cmd: str):
-#   try: res = eval(cmd)
-#   except Exception as e: res = str(e)
-#   return res
-
-# class Handler(BaseHTTPRequestHandler):
-#   def log_message(self, format, *args):
-#     pass
-    
-#   def do_GET(self):
-#     path = self.path.strip()
-#     if (path == "/logs"): self.respond("LOGS: " + "\n".join(out))
-#     elif (path.startswith("/log/")):
-#       self.respond(view(int(path.split("/log/")[1].split("/")[0])))
-#     elif (path == "/status"): self.respond(json.dumps({"version": check, "log_count": len(out)}))
-#     elif (path == "/"):
-#       self.respond(code())
-#     else: self.respond(f"not found: '{path}'")
-  
-#   def do_POST(self):
-#     path = self.path.strip()
-#     if (path == "/call"):
-#       cmd = self.rfile.read(int(self.headers.get("Content-Length"))).decode()
-#       pyeval(cmd)
-#       self.respond("")
-#     if (path == "/exec"):
-#       cmd = self.rfile.read(int(self.headers.get("Content-Length"))).decode()
-#       log("$ " + cmd)
-#       log(pyeval(cmd))
-#       self.respond("")
-  
-#   def respond(self, message: str):
-#     self.send_response(200)
-#     self.send_header("Content-Type", "text/html")
-#     self.end_headers()
-#     self.wfile.write(message.encode())
-
-# if __name__ == "__main__":
-#   HTTPServer(
-#     ("0.0.0.0", 8000),
-#     Handler
-#   ).serve_forever()
-
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import random
-from typing import Callable, Dict, Union
-
-def html(tag: str):
-  def mk(*content: str, **attrs: Dict[str, str]):
-    attrs = "\n".join([f"el.{key} = '{json.dumps(v)}';" for key, v in attrs.items()])
-    content = ''.join(content).replace("\\", "\\\\").replace("\n", "\\n").replace("'", "\\'")
-
-    return f'''(()=>{{
-      let el = document.createElement("{tag}");
-      el.innerHTML = '{content}';
-      {attrs}
-      return el
-    }})()'''
-  return mk
-
-h2 = html("h2")
-script = html("script")
-style = html("style")
-body = html("body")
-head = html("head")
-div = html("div")
-span = html("span")
-p = html("p")
-pre = html("pre")
-out = []
+from typing import Callable, List, Union
 
 version = random.randint(0, 1000000)
+page = '''<html>
 
-page = f'''
-<html>
-<head><style>body {{
-  --background: #f0f0f0; --color: #000000;
-  @media (prefers-color-scheme: dark) {{body {{--background: #000000; --color: #000000;}}}}
-  color: var(--color);
-  background: var(--background);
-  font-family: monospace;
-}}</style></head>
+<head>
+  <style>
+  body {
+    --background: #f0f0f0; --color: #000000;
+    color: var(--color);
+    background: var(--background);
+    font-family: monospace;
+  }
+  @media (prefers-color-scheme: dark) {body {--background: #000000; --color: #f0f0f0;}}
+  </style>
+</head>
 <body>
-
+</body>
   <script>
-    let version = {version};
-    let log_count = 0;
-    async function python(cmd){{
-      let ret = await fetch("/call", {{method: "POST", body: cmd}}).then(response => response.text());
-      console.log(ret);
-      return (new Function("return " + ret))()
-    }};
-    let term = document.createElement("div");
-    document.body.appendChild(term);
+  let body = document.body;
+  let terminal = document.createElement('div');
+  body.appendChild(terminal);
+  let input = document.createElement('input');
+  input.id = 'input';
+  input.style.border = 'none';
+  input.placeholder = '>>';
+  body.appendChild(input);
+  let log_count = 0;
+  let version = ''' + str(version) + ''';
+  function add_log(index){
+    let line = document.createElement('p');
+    terminal.appendChild(line);
+    fetch(`/log/${index}`).then(response => response.text()).then(data => {
+      line.innerHTML = `<span style="color: #888;">out[${index}]: </span>`;
+      let content = document.createElement('span');
+      line.appendChild(content);
 
-    function add_log(index){{
-      let line = document.createElement("p");
-      term.appendChild(line);
-      python(`out[${{index}}]`).then(res => line.replaceWith(res))
-    }}
-
-    function refresh(){{
-      fetch("/status").then(response => response.json()).then(async data => {{
-        if (version != data.version) window.location.reload();
-        while (log_count < data.log_count) {{
-          add_log(log_count);
-          log_count++;
-        }}
-      }})
-    }}
-    setInterval(refresh, 100);
+      content.innerHTML = data;
+      line.addEventListener('click', (e) => {
+        console.log("CLICK:", e.target)
+        let target = e.target;
+        while (!target.id) target = target.parentElement;
+        fetch(`/click/${index}/${target.id}`)
+        .then(response=>response.text()).then(data=>{content.innerHTML = data})
+      })
+    });
+  }
+  function refresh(){
+    fetch('/status').then(response => response.json()).then(data => {
+      ({version: new_version, log_count: new_log_count} = data);
+      if (version != new_version){
+        window.location.reload();
+      }
+      while (log_count < new_log_count) {
+        add_log(log_count);
+        log_count++;
+      }
+    });
+  }
+  function call(cmd){
+    fetch('/call', {method: 'POST', body: cmd})
+    .then(response=>response.text()).then(data=>{refresh()})
+  }
+  input.addEventListener('keydown', (e) => {
+    if (e.key == 'Enter') {
+      call(input.value);
+      input.value = '';
+    }
+  });
+  setInterval(refresh, 100);
   </script>
-</body></html>'''
+<html>'''
 
 
-def clear():
-  out.clear()
-  global version
-  version = random.randint(0, 1000000)
+def style(**kwargs):
+  return "; ".join(map(lambda x: f"{x[0]}: {x[1]}", kwargs.items()))
 
-functions = {}
-def log(message):
-  if isinstance(message, int): message = str(message)
-  elif isinstance(message, list):
-    message = "".join([pre(item) for item in message])
-    p = pre(message)
-    
-  out.append(pre(message))
+def html(tag: str):
+  def mk(content: str, style: str = None, id: str = None):
+    id = f" id=\"{id}\"" if id else ''
+    style = f" style=\"{style}\"" if style else ''
+    return f"<{tag}{id}{style}>{content}</{tag}>"
+  return mk
 
-
-def meep(): return p("meepooo")
-
-def call(fn: Callable, *args: str):
-  id = len(functions)
-  functions[id] = fn
-  return f'python(`functions[{id}]({", ".join(args)})`)'
+p = html("p")
+span = html("span")
+div = html("div")
 
 
-def button(text: str, onclick: Callable):
+class Item:
+  def __init__(self, data: any, id = "0"):
+    self.data = data
+    self.content = ""
+    self.open = False
+    self.id = id
+    self.children : List[Item] = []
+    self.render()
 
-  return f'''(()=>{{
-    let but = document.createElement("button");
-    but.innerHTML = "{text}";
-    but.addEventListener("click", () => {{
-      {call(onclick)}
-    }});
-    return but;
-  }})()'''
+  def onclick(self, target: str):
+    if (target == self.id):
+      self.set_open( not self.open)
+    else:
+      for child in self.children:
+        if (target.startswith(child.id)):
+          child.onclick(target)
 
-out.append(button("Click me", lambda: log("clicked")))
+  def set_open(item, open: bool):
+    print("SET_OPEN:", item.id, open)
+    if (item.open == open): return
+    item.open = open
+    if (isinstance(item.data, list)):
+      item.children = [Item(x, f"{item.id}.{i}") for i, x in enumerate(item.data)]
+    else:
+      item.children = []
+
+  def render(item):
+    for child in item.children:
+      child.render()
+    if (item.open):
+      if isinstance(item.data, list):
+        item.content = span("[" + "".join([div(x.content, style( margin="0 0 0 20px")) for x in item.children]) + "]", id=item.id)
+    else: item.content = span(str(item.data).replace("<", "&lt;").replace(">", "&gt;"), style(cursor="pointer"), id=item.id)
+    print("RENDER:", item.id, item.content)
 
 
+out = []
+items = []
 
+
+def log(x:any):
+  out.append(x)
+  items.append(Item(x))
+
+log([1,[2,[3,4]]])
+
+context = {"log": log, "out": out}
 
 class Handler(BaseHTTPRequestHandler):
+  def log_message(self, format, *args): pass
   def do_GET(self):
-    if (self.path == "/status"): self.respond(json.dumps({"version": version, "log_count": len(out)}))
-    else: self.respond(page)
+    if (self.path == "/status"): self.respond(json.dumps({"version": version, "log_count": len(items)}))
+    elif (self.path.startswith("/log/")):
+      index = int(self.path.split("/log/")[1])
+      self.respond(items[index].content)
+    elif (self.path == "/"): self.respond(page)
+    elif (self.path.startswith("/click/")):
+      [index, target] = self.path.split("/click/")[1].split("/")
+      index = int(index)
+      if items[index].onclick:
+        items[index].onclick(target)
+        items[index].render()
+        self.respond(items[index].content)
+    else: self.respond(f"not found: '{self.path}'")
   
   def do_POST(self):
     if (self.path == "/call"):
       cmd = self.rfile.read(int(self.headers.get("Content-Length"))).decode()
-      self.respond(eval(cmd))
+      try:
+        log("$ " + cmd)
+        res = eval(cmd, context)
+        if res is not None: log(res)
+      except Exception as e:
+        log(e)
+      self.respond("ok")
 
   def respond(self, message: str):
     self.send_response(200)
