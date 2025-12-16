@@ -30,7 +30,7 @@ page = '''<html>
   input.placeholder = '>>';
   body.appendChild(input);
   let log_count = 0;
-  let version = ''' + str(version) + ''';
+  let version = 0;
   function add_log(index){
     let line = document.createElement('p');
     terminal.appendChild(line);
@@ -81,8 +81,17 @@ page = '''<html>
       histindex--;
       input.value = history[history.length - histindex];
     }else histindex = 0;
+    if (e.key == 'k' && e.metaKey) {
+      call('clear()');
+    }
   });
-  setInterval(refresh, 100);
+
+  fetch('/status').then(response => response.json()).then(data => {
+    version = data.version
+    setInterval(refresh, 100);
+  });
+
+  input.focus()
   </script>
 <html>'''
 
@@ -138,7 +147,7 @@ class Item:
     print("RENDER:", item.id, item.content)
 
 
-out = []
+out:list = []
 items = []
 
 
@@ -150,7 +159,13 @@ log([1,[2,[3,4]]])
 def add(a,b): return a + b
 log(add)
 
-context = {"log": log, "out": out}
+def clear():
+  out.clear()
+  items.clear()
+  global version
+  version = random.randint(0, 1000000)
+
+context = {"log": log, "out": out, "clear": clear}
 
 class Handler(BaseHTTPRequestHandler):
   def log_message(self, format, *args): pass
