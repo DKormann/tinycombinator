@@ -65,11 +65,22 @@ page = '''<html>
     fetch('/call', {method: 'POST', body: cmd})
     .then(response=>response.text()).then(data=>{refresh()})
   }
+  let histindex = 0;
+  let history = [];
   input.addEventListener('keydown', (e) => {
     if (e.key == 'Enter') {
       call(input.value);
+      history.push(input.value);
       input.value = '';
+      console.log("HISTORY:", history);
     }
+    if (e.key == 'ArrowUp' && histindex < history.length -1) {
+      histindex++;
+      input.value = history[history.length - histindex];
+    }else if (e.key == 'ArrowDown' && histindex > 1) {
+      histindex--;
+      input.value = history[history.length - histindex];
+    }else histindex = 0;
   });
   setInterval(refresh, 100);
   </script>
@@ -136,6 +147,8 @@ def log(x:any):
   items.append(Item(x))
 
 log([1,[2,[3,4]]])
+def add(a,b): return a + b
+log(add)
 
 context = {"log": log, "out": out}
 
