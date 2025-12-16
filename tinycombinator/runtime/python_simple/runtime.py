@@ -2,7 +2,7 @@ import functools
 from typing import Generator, List
 from tinycombinator.nodes import Node, Port, Tag, wire, PN, MathOps
 from tinycombinator.helpers import debug
-from tinycombinator.term import Node
+from tinycombinator.term import F, T, Node, Term
 
 
 def erase(era:Node, app:Node)->Node:
@@ -21,7 +21,6 @@ def commute(dup: Node, lam: Node)->Node:
   tags = (dup.tag, lam.tag)
   d2tag = Tag.Sup if tags == (Tag.Dup, Tag.Lam) else dup.tag
   l2tag = Tag.Dup if tags == (Tag.App, Tag.Sup) else lam.tag
-
   new = [[Node(dup.tag, dup.label), Node(d2tag, dup.label)], [Node(lam.tag, lam.label), Node(l2tag, lam.label)]]
 
 
@@ -41,7 +40,13 @@ def prim_exec(app: Node, prim:Node):
     wire((app, 0), arg)
     wire((app, 1), (prim, 0))
   else:
-    prim.value = prim.value(arg.node.value) if callable(prim.value) else arg.node.value(prim.value)
+    if callable(prim.value):
+      prim.value = prim.value(arg.node.value)
+      if (isinstance(prim.value, bool)):
+        wire(app.con[PN.AUX2], Term(prim.value).port)
+        return
+    else:
+      prim.value = arg.node.value(prim.value)
     wire(app.con[PN.AUX2], (prim, 0))
 
 

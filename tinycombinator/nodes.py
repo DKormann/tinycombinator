@@ -43,6 +43,7 @@ class MathOps(Enum):
   Add, Sub, Mul, Div, Mod, Pow, Eq, Ne, Lt, Gt = range(10)
   __str__ = __repr__ = lambda self: ["+", "-", "*", "/", "%", "^", "==", "!=", "<", ">"][self.value]
   def __call__(self, x): return lambda y: eval(f"{x} {self} {y}")
+  __int__ = lambda self: self.value
 
 
 @dataclass

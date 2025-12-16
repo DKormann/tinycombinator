@@ -4,7 +4,7 @@ import unittest
 
 from tinycombinator.helpers import Context, Env, hide_dups, print_tree
 from tinycombinator.lib import church, scott
-from tinycombinator.nodes import Node, Port, Tag, wire, PN
+from tinycombinator.nodes import MathOps, Node, Port, Tag, wire, PN
 from tinycombinator.term import BACKEND, Term, ID, T, F, label_reset
 
 sup_ex = Term.sup(Term(lambda x:x), Term(None),0)
@@ -57,12 +57,10 @@ class ConstructionRepresentation(unittest.TestCase):
   def test_run(self):
 
     self._assert_run(ID()(ID()), ID())
-    self._assert_run(lambda x,y: Term.sup(x,y,0)(3), 'λa λb &0{ ( a 3) ( b 3)}')
 
     self._assert_run(sup_ex.dups(0)[0], "λa a")
     self._assert_run(sup_ex.dups(0)[1], "NULL")
     self._assert_run(sup_ex.dups(1)[0], "&0{ λa a NULL}")
-
 
     self._assert_run(Term(lambda x,y:x).dups(0)[0], Term(lambda x,y:x))
     self._assert_run(Term(lambda x,y:y).dups(0)[0], Term(lambda x,y:y))
@@ -85,9 +83,21 @@ class ConstructionRepresentation(unittest.TestCase):
     self._assert_run(Term(lambda x: (Term(lambda x,y:y)(x))), lambda x,y:y)
     self._assert_run(Term(lambda x,y,z:(Term.sup(x,y, 0))(z)), "λa λb λc &0{ ( a d where &0{d, e} = c) ( b e)}")
 
-  def test_prims(self):
-    self._assert_run(Term(1) + 2, 3)
+  def test_primitives(self):
 
+    self._assert_run(lambda x,y: Term.sup(x,y,0)(3), 'λa λb &0{ ( a 3) ( b 3)}')
+    self._assert_run(Term(1) + 2, 3)
+    self._assert_run(Term(1) + (Term(2) + 3), 6)
+    self._assert_run(Term(2) - 1, 1)
+
+    for i in [2,5,7]:
+      for j in [3,4,6]:
+        for op in [MathOps.Add, MathOps.Mul, MathOps.Sub, MathOps.Mod, MathOps.Pow]:
+          t = Term(Node(Tag.Prim, value = op))(Term(i), Term(j))
+          self._assert_run(t, eval(f"{i} {op} {j}"))
+        for op in [MathOps.Eq, MathOps.Ne, MathOps.Lt, MathOps.Gt]:
+          t = Term(Node(Tag.Prim, value = op))(Term(i), Term(j))
+          self._assert_run(t, T() if  eval(f"{i} {op} {j}") else F())
 
   def test_scott(self):
     self._assert_run(
@@ -138,6 +148,7 @@ class ConstructionRepresentation(unittest.TestCase):
       self.test_fmt()
       self.test_run()
       self.test_circular()
+      self.test_primitives()
       self.test_scott()
   
   def test_clang(self):

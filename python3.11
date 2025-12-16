@@ -1,6 +1,0 @@
-args=['tinycombinator/ast.py', 'tmp/adt.py', 'tinycombinator/adt.py', 'tmp/adt.py']
-Error: '>' separator not found in arguments
-Usage: watch file1 file2 ... > command
-args=['tinycombinator/ast.py', 'tmp/adt.py', 'tinycombinator/adt.py', 'tmp/adt.py']
-Error: '>' separator not found in arguments
-Usage: watch file1 file2 ... > command

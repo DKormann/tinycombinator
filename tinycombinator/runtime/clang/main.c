@@ -169,6 +169,11 @@ char* term_fmt(PORT port, Runtime* rt){
 }
 
 
+char* port_raw(PORT port){
+  char* buf = malloc(sizeof(char*) * 20);
+  sprintf(buf, "%d %d", get_loc(port), get_side(port));
+  return buf;
+}
 
 char* port_fmt(PORT port, Runtime* rt){
   char* buf = malloc(sizeof(char) * 100);
@@ -207,7 +212,7 @@ void _tree(PORT port, int d, BST* seen, Runtime* rt){
       _tree(src[0], d+1, seen, rt);
       break;
     case Dup:{
-      printf("Dup%d %d xor%d %d\n", get_label(port, rt), get_side(port), src[1] >> 1, src[1] & 1);
+      printf("Dup%d %d xor %d,%d\n", get_label(port, rt), get_side(port), src[1] >> 1, src[1] & 1);
       _tree(src[0], d+1, seen, rt);
       break;
     }
@@ -288,8 +293,7 @@ PORT new_node(Tag tag, int label, Runtime* rt){
 
 void free_node(PORT port, Runtime* rt){
   if (get_tag(port, rt) == Freed){
-    printf(RED "Error: Term %s is already freed\n", term_fmt(port, rt));
-    exit(1);
+    return;
   }
   Term* term = get_term(port, rt);
   term->tag = Freed;
@@ -338,15 +342,19 @@ void _check(PORT owner, BST* seen,Runtime* rt){
     }
 
     case Dup:{
+      // if (term->s[1] == 0){
+      //   tree(rt);
+      //   error("DUP ERROR: aux port is 0", rt);
+      // }
       PORT other = term->s[1] ^ owner;
+
 
       if (get_term(other, rt)->tag != ERA && get_port(other, rt) >> 1 != port >> 1){
         tree(rt);
-        printf("owner: %s\n", port_fmt(owner, rt));
         printf(RED "DUP ERROR: %s\n" RESET, port_fmt(port, rt));
         printf("owner: %s\n", port_fmt(owner, rt));
         printf("other: %s\n", port_fmt(other, rt));
-        exit(1);
+        error("DUP ERROR", rt);
       }
       _check((port >> 1 << 1) | 0 , seen, rt);
       break;
@@ -377,7 +385,6 @@ void check_term(Runtime* rt){
 
 void erase(PORT owner, Runtime* rt){
   PORT port = get_port(owner, rt);
-
   if (DEBUG>=2) printf("erase %d,%d -> %s\n", owner >> 1, owner &1, port_fmt(port, rt));
   switch (get_tag(port, rt)){
     case Lam:{
@@ -402,9 +409,10 @@ void erase(PORT owner, Runtime* rt){
     }
     case App:
     case Sup:{
-      free_node(port, rt);
+      get_term(port, rt)->tag = Freed;
       erase(to_s0(port), rt);
       erase(to_s1(port), rt);
+      free_node(port, rt);
       break;
     }
     default: break;
@@ -555,8 +563,76 @@ void dup_prim(PORT owner, PORT dup, PORT prim, Runtime* rt){
   set_port(other, prim2, rt);
 }
 
+PORT mk_bool(int b, Runtime* rt){
+  PORT l1 = new_node(Lam, 0, rt);
+  PORT l2 = new_node(Lam, 0, rt);
+  set_port(l1 | 1, l2, rt);
+  set_var(l2 | 1, b ? l1 : l2 | 0, rt);
+  set_port(b ? l2 : l1 | 0, new_node(ERA, 0, rt), rt);
+  return l1;
+}
+
 void app_prim(PORT owner, PORT app, PORT prim, Runtime* rt){
-  error("app prim not supported", rt);
+
+  PORT arg = get_port(app | 1, rt);
+  PORT prim_val = get_port(prim | 0, rt);
+  PORT arg_val = get_port(arg | 0, rt);
+
+  if (get_tag(arg,rt) != Prim){
+    set_port(app | 0, arg, rt);
+    set_port(app | 1, prim, rt);
+    return;
+  }
+
+  PORT p0 = get_port(prim | 0, rt);
+  PORT p1 = get_port(prim | 1, rt);
+  PORT a0 = get_port(arg | 0, rt);
+  PORT a1 = get_port(arg | 1, rt);
+
+  PORT op = a1 >> 1;
+  PORT x = a0 >> 1;
+  PORT y = p0 >> 1;
+  PORT res;
+
+  if (p1 == 0){
+    if (a1 == 0){
+      PORT op = p0 & 1 ? p0 : a0;
+      PORT x = p0 & 1 ? a0 : p0;
+      set_port(prim | 0, x, rt);
+      set_port(prim | 1, op, rt);
+      set_port(owner, prim, rt);
+      return;
+    }
+  }else{
+    op = p1 >> 1;
+    x = p0 >> 1;
+    y = a0 >> 1;
+  }
+  
+  if (op == 0) res = (x+y);
+  else if(op == 1) res = (x-y);
+  else if (op == 2) res = (x*y);
+  else if (op == 3) res = (x/y);
+  else if (op == 4) res = (x%y);
+  else if (op == 5) res = (x^y);
+
+  else{
+    if (op == 6) res = mk_bool(x==y, rt);
+    else if (op == 7) res = mk_bool(x!=y, rt);
+    else if (op == 8) res = mk_bool(x<y, rt);
+    else if (op == 9) res = mk_bool(x>y, rt);
+    else {
+      printf("invalid operation: %d\n", op);
+      error("invalid operation", rt);
+    }
+    set_port(owner, res, rt);
+    return;
+  }
+  res <<= 1;
+
+  set_port(prim | 0, res , rt);
+  set_port(prim | 1, 0, rt);
+  set_port(owner, prim, rt);
 }
 
 
@@ -574,7 +650,7 @@ int handle_redex(PORT owner, PORT term, Runtime* rt){
       ( otag == Lam ? app_lam
       : otag == Sup ? app_sup
       : otag == Null ? app_null
-      // : otag == Prim ? app_prim
+      : otag == Prim ? app_prim
       : NULL)
     :(tag == Dup) ?
       ( otag == Lam ? dup_lam

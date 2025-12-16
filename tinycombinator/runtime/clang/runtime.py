@@ -102,8 +102,9 @@ def serialize_node(root:Node)->CPtr:
           ps.append(make_port(cache[o.node], oside))
         CCall("set_dup_aux", [PORT, PORT, PORT, CPtr], None, make_port(cache[node], 0), ps[0], ps[1], local.runtime)
       case Tag.Prim:
-        CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], 0),
-        make_port(node.value, 0) if isinstance(node.value, int) else make_port(node.value.value, 1), local.runtime)
+        pport = make_port(int(node.value), isinstance(node.value, MathOps))
+        CCall("set_port", [PORT, PORT, CPtr], None, make_port(cache[node], 0), pport, local.runtime)
+
 
       case _:
         for i in range(len(encoded_ports(node.tag))): c_connect(i)
