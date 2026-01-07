@@ -1,14 +1,15 @@
-from tinycombinator import Node, execute
+from tinycombinator import Term
 
 
 
-c = Node(lambda x: x)(lambda y: y)
-
-d = c.run()
-
-
+c = Term(lambda x: x)(lambda y: y)
 
 print(c)
-print(d)
 
 
+
+print(c.sup(lambda x:x, 1))
+
+r = c.run()
+
+print(r)
