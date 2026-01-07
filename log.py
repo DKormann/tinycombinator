@@ -62,8 +62,7 @@ page = '''<html>
     });
   }
   function call(cmd){
-    fetch('/call', {method: 'POST', body: cmd})
-    .then(response=>response.text()).then(data=>{refresh()})
+    fetch('/call', {method: 'POST', body: cmd}).then(()=>refresh())
   }
   let histindex = 0;
   let history = [];
@@ -72,7 +71,6 @@ page = '''<html>
       call(input.value);
       history.push(input.value);
       input.value = '';
-      console.log("HISTORY:", history);
     }
     if (e.key == 'ArrowUp' && histindex < history.length -1) {
       histindex++;
@@ -81,9 +79,7 @@ page = '''<html>
       histindex--;
       input.value = history[history.length - histindex];
     }else histindex = 0;
-    if (e.key == 'k' && e.metaKey) {
-      call('clear()');
-    }
+    if (e.key == 'k' && e.metaKey) call('clear()');
   });
 
   fetch('/status').then(response => response.json()).then(data => {
@@ -96,8 +92,7 @@ page = '''<html>
 <html>'''
 
 
-def style(**kwargs):
-  return "; ".join(map(lambda x: f"{x[0]}: {x[1]}", kwargs.items()))
+def style(**kwargs): return "; ".join(map(lambda x: f"{x[0]}: {x[1]}", kwargs.items()))
 
 def html(tag: str):
   def mk(content: str, style: str = None, id: str = None):
@@ -121,21 +116,15 @@ class Item:
     self.render()
 
   def onclick(self, target: str):
-    if (target == self.id):
-      self.set_open( not self.open)
+    if (target == self.id): self.set_open( not self.open)
     else:
       for child in self.children:
-        if (target.startswith(child.id)):
-          child.onclick(target)
+        if (target.startswith(child.id)): child.onclick(target)
 
   def set_open(item, open: bool):
-    print("SET_OPEN:", item.id, open)
     if (item.open == open): return
     item.open = open
-    if (isinstance(item.data, list)):
-      item.children = [Item(x, f"{item.id}.{i}") for i, x in enumerate(item.data)]
-    else:
-      item.children = []
+    item.children = [Item(x, f"{item.id}.{i}") for i, x in enumerate(item.data)]if isinstance(item.data, list) else []
 
   def render(item):
     for child in item.children:
@@ -144,12 +133,10 @@ class Item:
       if isinstance(item.data, list):
         item.content = span("[" + "".join([div(x.content, style( margin="0 0 0 20px")) for x in item.children]) + "]", id=item.id)
     else: item.content = span(str(item.data).replace("<", "&lt;").replace(">", "&gt;"), style(cursor="pointer"), id=item.id)
-    print("RENDER:", item.id, item.content)
 
 
 out:list = []
 items = []
-
 
 def log(x:any):
   out.append(x)
@@ -164,6 +151,9 @@ def clear():
   items.clear()
   global version
   version = random.randint(0, 1000000)
+
+
+# def view(x:list, bars:bool = False):
 
 context = {"log": log, "out": out, "clear": clear}
 
@@ -191,18 +181,15 @@ class Handler(BaseHTTPRequestHandler):
         log("$ " + cmd)
         res = eval(cmd, context)
         if res is not None: log(res)
-      except Exception as e:
-        log(e)
+      except Exception as e: log(e)
       self.respond("ok")
 
   def respond(self, message: str):
     self.send_response(200)
     self.send_header("Content-Type", f"text/html")
+    self.send_header("Access-Control-Allow-Origin", "*")
     self.end_headers()
     self.wfile.write(message.encode())
 
-
 if __name__ == "__main__":
   HTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
-
-
